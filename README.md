@@ -1,5 +1,9 @@
 ## Notes for NCI (Gadi)
 **November 2019**
+### Quickstart
+
+** Required: a short command that compiles and then runs the code with some example dataset
+
 ### Data sources
 ```
 $ ls -lh /g/data/hh5/tmp/w28/jpe561/back_traj/
