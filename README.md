@@ -2,7 +2,7 @@
 **November 2019**
 ### Quickstart
 ```
-# Instructions Gadi
+# Instructions for Gadi
 
 #
 # Load module for netcdf
@@ -39,7 +39,7 @@ cat - <<EOF >191119-qibt.sh
 #PBS -q normal
 #PBS -l walltime=10:00:00
 #PBS -l ncpus=48
-#PBS -l mem=16GB
+#PBS -l mem=64GB
 #PBS -l storage=gdata/hh5 
 cd $PBS_O_WORKDIR
 ./main 11 01 1980 13 01 1980 ./outputs
@@ -50,6 +50,24 @@ EOF
 # Submit the job to Gadi normal queue
 #
 qsub 191119-qibt.sh
+
+#
+# Example resource usage via qstat
+#
+Every 60.0s: qstat -f 149802                                     gadi-login-04.gadi.nci.org.au: Wed Nov 20 10:19:04 2019
+
+Job Id: 149802.gadi-pbs
+    Job_Name = gadicascade.sh
+    Job_Owner = sy0928@gadi-login-04.gadi.nci.org.au
+    resources_used.cpupercent = 4252
+    resources_used.cput = 23:11:41
+    resources_used.jobfs = 0b
+    resources_used.mem = 15460196kb
+    resources_used.ncpus = 48
+    resources_used.vmem = 15460196kb
+    resources_used.walltime = 00:32:29
+    job_state = R
+    queue = normal-exec
 ```
 ### Data sources
 ```
