@@ -7,6 +7,7 @@
 #
 # Load module for netcdf
 #
+module load intel-compiler/2019.3.199
 module load netcdf/4.7.1
 
 #
@@ -18,12 +19,16 @@ cd QIBT_shared
 #
 # Compile with OpenMP
 #
-gfortran -ffree-line-length-512 -fopenmp -O3 -c QIBT_exp10.f90
+# gfortran equivalent:
+# gfortran -ffree-line-length-512 -fopenmp -O3 -c QIBT_exp10.f90
+ifort -03 -fopenmp -c QIBT_exp10.f90
 
 #
 # Link the executable
 #
-gfortran -fopenmp -O3 -L/apps/netcdf/4.7.1/lib -lnetcdff QIBT_exp10.o -o main
+# gfortran equivalent
+# gfortran -fopenmp -O3 -L/apps/netcdf/4.7.1/lib -lnetcdff QIBT_exp10.o -o main
+ifort -O3 -fopenmp -L/apps/netcdf/4.7.1/lib -lnetcdff QIBT_exp10.o -o main
 
 #
 # Run QIBT from 11 Jan 1980 to 13 Jan 1980, storing the results in subdirectory ./outputs
@@ -42,6 +47,7 @@ cat - <<EOF >191119-qibt.sh
 #PBS -l mem=64GB
 #PBS -l storage=gdata/hh5 
 cd $PBS_O_WORKDIR
+ulimit -s unlimited
 ./main 11 01 1980 13 01 1980 ./outputs
 
 EOF
