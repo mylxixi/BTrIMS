@@ -85,3 +85,9 @@ drwxrwsr-x+ 2 jpe561 hh5 1.1M Dec 21  2018 wrfout
 ```
 
 ** Required: a brief introduction to what is the format and contents of these files
+
+### Verify that scaling with OpenMP gives consistent output
+#### Visualise with Panoply
+First, download and [install Java](https://www.java.com)
+
+Then download and extract [Panoply](https://www.giss.nasa.gov/tools/panoply/download)
