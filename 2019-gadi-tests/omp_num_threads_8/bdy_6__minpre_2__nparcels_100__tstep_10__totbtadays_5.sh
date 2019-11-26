@@ -22,4 +22,4 @@ mkdir -p $PBS_O_WORKDIR/outputs/$PBS_JOBID
 #
 # Run the program and output timing
 #
-time ./main 11 01 1981 15 01 1981 $PBS_O_WORKDIR/outputs/$PBS_JOBID/
+time ./main 11 01 1981 15 01 1981 $PBS_O_WORKDIR/outputs/
