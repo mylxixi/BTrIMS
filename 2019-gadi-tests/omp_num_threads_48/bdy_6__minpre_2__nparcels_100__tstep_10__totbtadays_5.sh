@@ -11,6 +11,8 @@ ulimit -s unlimited
 #
 # Compile the program
 #
+cp ../../QIBT_exp10.f90 .
+
 sed -i 's/INTEGER, PARAMETER :: numthreads.*/INTEGER, PARAMETER :: numthreads = 48/g' QIBT_exp10.f90
 module load intel-compiler/2019.3.199
 module load netcdf/4.7.1
