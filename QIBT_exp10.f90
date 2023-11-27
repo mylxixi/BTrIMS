@@ -1,6 +1,6 @@
 !%%%%%%% AUTHORSHIP %%%%%%%
 ! This program was written by Jason P. Evans (UNSW) and modified by Chiara M. Holgate (ANU).
-! Please seek permission before publishing all or part of this code, from chiara.holgate@anu.edu.au.
+! Please seek permission before publishing all or part of this code, from jason.evans@unsw.edu.au and/or chiara.holgate@anu.edu.au.
 
 
 !%%%%%%% PURPOSE %%%%%%%
