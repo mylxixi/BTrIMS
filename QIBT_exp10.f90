@@ -2426,7 +2426,7 @@ MODULE input_data_handling_era5
 
 		!!! Locals
 		INTEGER :: status
-		INTEGER :: tstepid, latcrsid, loncrsid, levelid
+		INTEGER :: headncid, tstepid, latcrsid, loncrsid, levelid
 		INTEGER :: fdim_i, fdim_j, fdim_k
 		CHARACTER(len=100) :: fname
 
@@ -2452,6 +2452,7 @@ MODULE input_data_handling_era5
 		if (status /= NF90_NOERR) call handle_err(status)
 		status = nf90_inquire_dimension(headncid, levelid, len = fdim_k)
 		if (status /= NF90_NOERR) call handle_err(status)
+
 		!!! TESTING - THIS NEEDS TO BE AUTOMATED
 		! Calculation of ssdim requires delx of the grid.
 		delx=25202.112430956095
