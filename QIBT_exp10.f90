@@ -63,10 +63,6 @@
 
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-
-
-
 MODULE global_data
 
 IMPLICIT NONE
@@ -94,7 +90,7 @@ CHARACTER(LEN=50), PARAMETER :: diri = "/g/data/hh5/tmp/w28/jpe561/back_traj/"
 ! CHARACTER(LEN=100), PARAMETER :: diro = "/g/data/xc0/user/Holgate/QIBT/exp02/"
 CHARACTER(LEN=100) :: diro  
 CHARACTER(LEN=100), PARAMETER :: dirdata_atm = "/g/data/hh5/tmp/w28/jpe561/back_traj/wrfout/"
-CHARACTER(LEN=100), PARAMETER :: dirdata_era5 = "/g/data/rt52/era5"
+CHARACTER(LEN=100), PARAMETER :: dirdata_era5 = "/g/data/rt52/era5/"
 CHARACTER(LEN=100), PARAMETER :: dirdata_land = "/g/data/hh5/tmp/w28/jpe561/back_traj/wrfhrly/"  
 ! CHARACTER(LEN=100), PARAMETER :: dirdata_atm = "/srv/ccrc/data33/z3481416/CCRC-WRF3.6.0.5-SEB/ERA-Interim/R2_nudging/out/"
 ! CHARACTER(LEN=100), PARAMETER :: dirdata_land = "/srv/ccrc/data03/z3131380/PartB/NARCliM_postprocess/" 
@@ -110,6 +106,7 @@ CHARACTER(LEN=50), PARAMETER :: fwshed = "NARCliM_AUS_land_sea_mask.nc"
                                 !0 outside watershed, >0 inside
 
 REAL, PARAMETER :: min_del_q = 0.0001    !the minimum change in parcel mixing ratio (kg/kg) to be considered "real"
+REAL, PARAMETER :: delta_coord = 0.0001  ! 1/10000th degree - for floating point calculations
 
 
 !****************************************************
@@ -449,6 +446,59 @@ MODULE util
 		END IF
 
 	END FUNCTION month_end
+
+	SUBROUTINE array_extents(arr,in_start,in_end,i_start,i_end,reverse)
+
+		USE global_data, ONLY: delta_coord
+
+		IMPLICIT NONE
+
+		REAL, DIMENSION(:), INTENT(IN) :: arr
+		REAL, INTENT(IN)               :: in_start, in_end
+		INTEGER, INTENT(OUT)           :: i_start, i_end
+		LOGICAL,OPTIONAL,INTENT(IN)    :: reverse
+
+		!!! Locals
+		INTEGER :: i
+		REAL :: start, end
+
+		i_start = -1
+		i_end   = -1
+		if ( in_start > in_end ) then
+			!!! Swap bounds if necessary
+			end   = in_start
+			start = in_end
+		else
+			start = in_start
+			end   = in_end
+		end if
+
+		if( present(reverse) .and. reverse ) then
+			do i=1,SIZE(arr)
+				if ( i_start == -1 ) then
+					if ( abs(arr(i) - end) < delta_coord ) i_start = i
+				else if ( i_end == -1 ) then
+					if ( abs(arr(i) - start) < delta_coord ) i_end = i
+				else
+					exit
+				end if
+			end do
+		else
+			do i=1,SIZE(arr)
+				if ( i_start == -1 ) then
+					if ( abs(arr(i) - start) < delta_coord ) i_start = i
+				else if ( i_end == -1 ) then
+					if ( abs(arr(i) - end) < delta_coord ) i_end = i
+				else
+					exit
+				end if
+			end do
+		end if
+
+		if ( i_start == -1 ) i_start = 1
+		if ( i_end == -1 ) i_end = size(arr)
+
+	END SUBROUTINE array_extents
 
 END MODULE util
 
@@ -1659,6 +1709,7 @@ END MODULE bt_subs
 !***********************************************************************
 !***********************************************************************
 
+#ifndef ERA5
 MODULE input_data_handling_wrf
 
 	IMPLICIT NONE
@@ -2347,10 +2398,10 @@ MODULE input_data_handling_wrf
 
 
 END MODULE input_data_handling_wrf
-
+#endif
 !***********************************************************************
 !***********************************************************************
-
+#if defined ERA5
 MODULE input_data_handling_era5
 
 	IMPLICIT NONE
@@ -2414,7 +2465,7 @@ MODULE input_data_handling_era5
 	SUBROUTINE get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents)
 
 		USE global_data, ONLY: syear, smon, sday, dirdata_era5, totpts, bdy, datansteps
-		USE util, ONLY: int_to_string, handle_err, all_positive_longitude, to_iso_date, month_end
+		USE util, ONLY: int_to_string, handle_err, all_positive_longitude, to_iso_date, month_end, array_extents
 		USE netcdf
 
 		IMPLICIT NONE
@@ -2428,6 +2479,10 @@ MODULE input_data_handling_era5
 		INTEGER :: status
 		INTEGER :: headncid, tstepid, latcrsid, loncrsid, levelid
 		INTEGER :: fdim_i, fdim_j, fdim_k
+		INTEGER :: dim_i_start, dim_j_start, dim_k_start, dim_i_end, dim_j_end, dim_k_end
+		INTEGER :: idim
+		REAL, ALLOCATABLE, DIMENSION(:) :: lat1d, lon1d, levels
+		REAL, DIMENSION(2)              :: input_timeseries
 		CHARACTER(len=100) :: fname
 
 		write(fname,'(a,i4.4,a)') TRIM(dirdata_era5)//"pressure-levels/reanalysis/q/",syear,"/q_era5_oper_pl_"//to_iso_date(syear,smon,1)//"-"//to_iso_date(syear,smon,month_end(syear,smon))//".nc"
@@ -2453,14 +2508,90 @@ MODULE input_data_handling_era5
 		status = nf90_inquire_dimension(headncid, levelid, len = fdim_k)
 		if (status /= NF90_NOERR) call handle_err(status)
 
+		allocate(lat1d(fdim_i),lon1d(fdim_j),levels(fdim_k))
+
+		status = nf90_inq_varid(headncid, "latitude", latcrsid)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_var(headncid, latcrsid, lat1d)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		status = nf90_inq_varid(headncid, "longitude", loncrsid)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_var(headncid, loncrsid, lon1d)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		status = nf90_inq_varid(headncid, "level", levelid)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_var(headncid, levelid, levels)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		status = nf90_inq_varid(headncid, "time", tstepid)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		! Time dimension - just take the difference between the first two values as the file timestep
+		status = nf90_get_var(headncid, tstepid, input_timeseries, start=(/1/), count=(/2/))
+		if(status /= nf90_NoErr) call handle_err(status)
+		datatstep = 60*(input_timeseries(2) - input_timeseries(1)) ! model expects timestep in minutes
+
+
+		if( present(extents) ) then
+			call array_extents(lat1d, extents(1),extents(2),dim_i_start,dim_i_end,.true.)
+			call array_extents(lon1d, extents(3),extents(4),dim_j_start,dim_j_end)
+			call array_extents(levels,extents(5),extents(6),dim_k_start,dim_k_end)
+			dim_i_start = dim_i_start + bdy
+			dim_j_start = dim_j_start + bdy
+			dim_i_end   = dim_i_end - bdy
+			dim_j_end   = dim_j_end - bdy
+		else
+			!!! extents not present, must want global grid
+			dim_i_end  = fdim_i - bdy
+			dim_j_end  = fdim_j - bdy
+			dim_k_end  = fdim_k
+			dim_i_start = 1 + bdy
+			dim_j_start = 1 + bdy
+			dim_k_start = 1
+		endif
+
+		dim_i = dim_i_end - dim_i_start + 1
+		dim_j = dim_j_end - dim_j_start + 1
+		dim_k = dim_k_end - dim_k_start + 1
+
+		allocate(lat2d(dim_i,dim_j))
+		allocate(lon2d(dim_i,dim_j))
+
+		do idim = 1,dim_j
+			lat2d(:,idim) = lat1d(dim_i_start:dim_i_end)
+		end do
+
+		do idim = 1,dim_i
+			lon2d(idim,:) = lon1d(dim_j_start:dim_i_end)
+		end do
+
+		!! mBar -> Pa
+		ptop = levels(dim_k_start)*100.0
+
 		!!! TESTING - THIS NEEDS TO BE AUTOMATED
 		! Calculation of ssdim requires delx of the grid.
 		delx=25202.112430956095
 
 	END SUBROUTINE
 
-END MODULE input_data_handling_era5
+	SUBROUTINE get_data(precip,evap,u,v,w,t,q,qc,qt,pp,pb,pbl_hgt,psfc)
 
+		USE global_data
+		USE util
+		USE netcdf
+
+		IMPLICIT NONE
+
+		REAL, DIMENSION(:,:,:) :: precip,evap,pbl_hgt,psfc
+		REAL, DIMENSION(:,:,:,:) :: u,v,w,t,q,qc,qt,pp,pb
+		REAL, DIMENSION(SIZE(u,1),SIZE(u,2),SIZE(u,3),datadaysteps) :: temp
+	
+	END SUBROUTINE
+
+END MODULE input_data_handling_era5
+#endif
 
 PROGRAM back_traj
 
@@ -2470,10 +2601,11 @@ PROGRAM back_traj
 	USE bt_subs
 	USE omp_lib
 
-	!!!
+#if defined ERA5
+	USE input_data_handling_era5, ONLY: get_grid_data, get_data
+#else
 	USE input_data_handling_wrf, ONLY: get_grid_data, get_data
-	!USE input_data_handling_era5, ONLY: get_grid_data, get_data
-	!!!
+#endif
 
 	IMPLICIT NONE
 
@@ -2562,7 +2694,7 @@ PROGRAM back_traj
 
 	!----------------------------------------------------------------
 	! Get header info from first input file
-	call get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d)
+	call get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents=(/ -60.0, 0.0, 90.0, 180.0, 500.0, 1000.0 /))
 
 	!--------------------------------------------------------
 
