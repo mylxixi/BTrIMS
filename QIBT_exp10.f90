@@ -86,6 +86,7 @@ REAL, PARAMETER :: minpre = 2   !min daily precip to deal with (mm)
 INTEGER, PARAMETER :: bdy = 6   !boundary layers to ignore; trajectories will be tracked to this boundary
 
 CHARACTER(LEN=50), PARAMETER :: diri = "/g/data/hh5/tmp/w28/jpe561/back_traj/" 
+CHARACTER(LEN=50), PARAMETER :: diri_era5 = "/g/data/w97/cxh603/QIBT_ERA5/"
 ! CHARACTER(LEN=50), PARAMETER :: diri = "/srv/ccrc/data03/z3131380/PartB/Masks/"
 ! CHARACTER(LEN=100), PARAMETER :: diro = "/g/data/xc0/user/Holgate/QIBT/exp02/"
 CHARACTER(LEN=100) :: diro  
@@ -102,6 +103,7 @@ LOGICAL, PARAMETER :: peak = .FALSE.	!does the daylist indicate storm peaks (TRU
 LOGICAL, PARAMETER :: wshed = .TRUE. !only calculate trajectories for watershed
 
 CHARACTER(LEN=50), PARAMETER :: fwshed = "NARCliM_AUS_land_sea_mask.nc"
+CHARACTER(LEN=50), PARAMETER :: fwshed_era5 = "ERA5_test_wsmask3.nc"
                                 !set to "" if no watershed
                                 !0 outside watershed, >0 inside
 
@@ -2300,7 +2302,7 @@ MODULE input_data_handling_wrf
 
 	END SUBROUTINE get_data_mixtot
 
-	SUBROUTINE get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents)
+	SUBROUTINE get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents, i_offset, j_offset, k_offset)
 
 		USE global_data, ONLY: syear, smon, sday, dirdata_atm, totpts, bdy
 		USE util, ONLY: int_to_string, handle_err, all_positive_longitude
@@ -2313,6 +2315,7 @@ MODULE input_data_handling_wrf
 		REAL,ALLOCATABLE,DIMENSION(:,:), INTENT(OUT) :: lat2d,lon2d
 		!!! extents does nothing for this verison of the subroutine
 		REAL,DIMENSION(6), INTENT(IN),OPTIONAL :: extents
+		INTEGER, INTENT(OUT), OPTIONAL         :: i_offset, j_offset, k_offset
 
 		!!! Locals
 		CHARACTER(LEN=100):: fname
@@ -2394,8 +2397,49 @@ MODULE input_data_handling_wrf
 
 		lon2d=lon2d_corrected
 
+		if ( present(i_offset) ) i_offset = bdy
+		if ( present(j_offset) ) j_offset = bdy
+		if ( present(k_offset) ) k_offset = 1
+
+		write(*,*) i_offset, j_offset
+
 	END SUBROUTINE get_grid_data
 
+	SUBROUTINE get_watershed(dim_i,dim_j,dim_i_start,dim_j_start,wsmask)
+
+		USE global_data, ONLY: bdy, diri, fwshed_era5
+		USE util, ONLY: handle_err
+		USE netcdf
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(IN) :: dim_i, dim_j
+		INTEGER, INTENT(IN) :: dim_i_start, dim_j_start
+		INTEGER, ALLOCATABLE, DIMENSION(:,:), INTENT(OUT) :: wsmask
+
+		!!! Locals
+		CHARACTER(len=100) :: fname
+		INTEGER            :: status
+		INTEGER            :: wsncid, wsid
+
+		fname=TRIM(diri)//"watershed/"//TRIM(fwshed)
+
+		print *,'using wshed from',fname
+		ALLOCATE( wsmask(dim_j,dim_i), STAT = status )
+		status = NF90_OPEN(fname, NF90_NOWRITE, wsncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		status = nf90_inq_varid(wsncid, "wsmask", wsid)  !watershed mask
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		write(*,*) dim_j_start, dim_j_start, dim_i, dim_j
+
+		status = nf90_get_var(wsncid, wsid, wsmask,start=(/dim_j_start,dim_i_start/),count=(/dim_j,dim_i/))
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		status = nf90_close(wsncid)
+
+	END SUBROUTINE
 
 END MODULE input_data_handling_wrf
 #endif
@@ -2462,7 +2506,7 @@ MODULE input_data_handling_era5
 
 	END SUBROUTINE get_filename
 
-	SUBROUTINE get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents)
+	SUBROUTINE get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents, i_offset, j_offset, k_offset)
 
 		USE global_data, ONLY: syear, smon, sday, dirdata_era5, totpts, bdy, datansteps
 		USE util, ONLY: int_to_string, handle_err, all_positive_longitude, to_iso_date, month_end, array_extents
@@ -2470,10 +2514,11 @@ MODULE input_data_handling_era5
 
 		IMPLICIT NONE
 
-		REAL,INTENT(OUT)              :: ptop, delx
-		INTEGER, INTENT(OUT)          :: datatstep, dim_i, dim_j, dim_k
+		REAL,INTENT(OUT)                             :: ptop, delx
+		INTEGER, INTENT(OUT)                         :: datatstep, dim_i, dim_j, dim_k
 		REAL,ALLOCATABLE,DIMENSION(:,:), INTENT(OUT) :: lat2d,lon2d
-		REAL,DIMENSION(6), INTENT(IN),OPTIONAL :: extents
+		REAL,DIMENSION(6), INTENT(IN),OPTIONAL       :: extents
+		INTEGER, INTENT(OUT), OPTIONAL               :: i_offset, j_offset, k_offset
 
 		!!! Locals
 		INTEGER :: status
@@ -2556,16 +2601,18 @@ MODULE input_data_handling_era5
 		dim_j = dim_j_end - dim_j_start + 1
 		dim_k = dim_k_end - dim_k_start + 1
 
-		allocate(lat2d(dim_i,dim_j))
-		allocate(lon2d(dim_i,dim_j))
+		allocate(lat2d(dim_j,dim_i))
+		allocate(lon2d(dim_j,dim_i))
 
 		do idim = 1,dim_j
-			lat2d(:,idim) = lat1d(dim_i_start:dim_i_end)
+			lat2d(idim,:) = lat1d(dim_i_start:dim_i_end)
 		end do
 
 		do idim = 1,dim_i
-			lon2d(idim,:) = lon1d(dim_j_start:dim_i_end)
+			lon2d(:,idim) = lon1d(dim_j_start:dim_i_end)
 		end do
+
+		call all_positive_longitude(lon2d,lon2d)
 
 		!! mBar -> Pa
 		ptop = levels(dim_k_start)*100.0
@@ -2573,6 +2620,45 @@ MODULE input_data_handling_era5
 		!!! TESTING - THIS NEEDS TO BE AUTOMATED
 		! Calculation of ssdim requires delx of the grid.
 		delx=25202.112430956095
+
+		if ( present(i_offset) ) i_offset = dim_i_start
+		if ( present(j_offset) ) j_offset = dim_j_start
+		if ( present(k_offset) ) k_offset = dim_k_start
+
+	END SUBROUTINE
+
+	SUBROUTINE get_watershed(dim_i,dim_j,dim_i_start, dim_j_start, wsmask)
+
+		USE global_data, ONLY: diri_era5, fwshed_era5
+		USE util, ONLY: handle_err
+		USE netcdf
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(IN) :: dim_i, dim_j
+		INTEGER, INTENT(IN) :: dim_i_start, dim_j_start
+		INTEGER, ALLOCATABLE, DIMENSION(:,:), INTENT(OUT) :: wsmask
+
+		!!! Locals
+		INTEGER :: wsncid, wsid, status
+		CHARACTER(len=100) :: fname
+
+		fname=TRIM(diri_era5)//TRIM(fwshed_era5)
+
+		print *,'using wshed from',fname
+		ALLOCATE( wsmask(dim_j,dim_i), STAT = status )
+
+		status = NF90_OPEN(fname, NF90_NOWRITE, wsncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		status = nf90_inq_varid(wsncid, "wsmask", wsid)  !watershed mask
+		if(status /= nf90_NoErr) call handle_err(status)
+
+	  status = nf90_get_var(wsncid, wsid, wsmask,start=(/dim_j_start, dim_i_start/), count=(/dim_j, dim_i/))
+  	if(status /= nf90_NoErr) call handle_err(status)
+
+		status = nf90_close(wsncid)
+		if(status /= nf90_NoErr) call handle_err(status)
 
 	END SUBROUTINE
 
@@ -2602,9 +2688,9 @@ PROGRAM back_traj
 	USE omp_lib
 
 #if defined ERA5
-	USE input_data_handling_era5, ONLY: get_grid_data, get_data
+	USE input_data_handling_era5, ONLY: get_grid_data, get_data, get_watershed
 #else
-	USE input_data_handling_wrf, ONLY: get_grid_data, get_data
+	USE input_data_handling_wrf, ONLY: get_grid_data, get_data, get_watershed
 #endif
 
 	IMPLICIT NONE
@@ -2616,8 +2702,7 @@ PROGRAM back_traj
 	INTEGER :: spid,ptopid,delxid,latcrsid,loncrsid,terid,tstepid
 	INTEGER :: dimjid,dimiid,sigid,dimkid
 	INTEGER :: outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,latid,lonid
-	INTEGER :: wsncid, wsid
-	CHARACTER(LEN=100):: fname
+	INTEGER :: dim_i_start, dim_j_start, dim_k_start
 
 	!
 	!data variables
@@ -2694,8 +2779,7 @@ PROGRAM back_traj
 
 	!----------------------------------------------------------------
 	! Get header info from first input file
-	call get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents=(/ -60.0, 0.0, 90.0, 180.0, 500.0, 1000.0 /))
-
+	call get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, (/ -60.0, 0.0, 90.0, 180.0, 500.0, 1000.0 /), dim_i_start, dim_j_start, dim_k_start )
 	!--------------------------------------------------------
 
 	!
@@ -2725,20 +2809,7 @@ PROGRAM back_traj
 	! Read in watershed mask if required
 	!
 	if (wshed) then
-		fname=TRIM(diri)//"watershed/"//TRIM(fwshed)
-		print *,'using wshed from',fname
-		ALLOCATE( wsmask(dim_j,dim_i), STAT = status )
-
-		status = NF90_OPEN(TRIM(diri)//"watershed/"//TRIM(fwshed), NF90_NOWRITE, wsncid)
-		if (status /= NF90_NOERR) call handle_err(status)
-
-		status = nf90_inq_varid(wsncid, "wsmask", wsid)  !watershed mask
-		if(status /= nf90_NoErr) call handle_err(status)
-
-		status = nf90_get_var(wsncid, wsid, wsmask,start=(/bdy,bdy/),count=(/dim_j,dim_i/))
-		if(status /= nf90_NoErr) call handle_err(status)
-
-		status = nf90_close(wsncid)
+		call get_watershed(dim_i,dim_j,dim_i_start,dim_j_start,wsmask)
 	end if
 
 	! Total number of grid pts inside boundaries
