@@ -76,12 +76,12 @@ SAVE
 INTEGER :: sday,smon,syear    !start day for calculations
 INTEGER :: edday,edmon,edyear !end day for calculations (Exclusive. Must be at least one day after start day)
 INTEGER :: totdays
-INTEGER, PARAMETER :: totbtadays = 30   !number of days of data to keep for bta; i.e. how far back in time to calc.
+INTEGER, PARAMETER :: totbtadays = 2   !number of days of data to keep for bta; i.e. how far back in time to calc.
                                        !must be less than days you have input data for
 INTEGER, PARAMETER :: tstep = 10   !number of minutes for back trajectory time step (simultion time step)
                       !must divide evenly into number of minutes in day 1440 and number of minutes in MM5 time step (here 180)
 INTEGER, PARAMETER :: nparcels = 100   !set the number of parcels to release if it rains
-REAL, PARAMETER :: minpre = 2   !min daily precip to deal with (mm)
+REAL, PARAMETER :: minpre = 1   !min daily precip to deal with (mm)
 
 INTEGER, PARAMETER :: bdy = 6   !boundary layers to ignore; trajectories will be tracked to this boundary
 
@@ -116,6 +116,7 @@ REAL, PARAMETER :: delta_coord = 0.0001  ! 1/10000th degree - for floating point
 
 INTEGER :: daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps
 INTEGER :: dim_i,dim_j,dim_k,fdim_i,fdim_j,ssdim
+INTEGER :: dim_i_start, dim_j_start, dim_k_start
 INTEGER :: mon,year,dd,totpts
 INTEGER :: day
 ! Additional variable to define the number of time intervals in the input data, now that the input data is monthly instead of daily
@@ -131,6 +132,7 @@ REAL, PARAMETER :: Rv = 461.5    !gas constant of water vapor (J/kgK)
 REAL, PARAMETER :: Cl = 4400     !heat capacity of liquid water at ~-20C (J/kgK)
 REAL, PARAMETER :: pi = 3.14159265
 REAL, PARAMETER :: deg_dist = 111.   !average distance of 1 degree lat is assumed to be 111km
+REAL, PARAMETER :: water_density = 1000 ! density of water (kg/m3)
 
 COMMON /global_vars/ daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps, &
 		dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts, &
@@ -443,7 +445,7 @@ MODULE util
 				RETURN
 			END IF
 		ELSE
-			month_end = 29
+			month_end = 28
 			RETURN
 		END IF
 
@@ -1696,7 +1698,7 @@ MODULE bt_subs
 
 
 		if (lev==0) then
-		  !print *,'parcel lev=0',par_lev,lev,par_pres,temp_par,thread
+		  print *,'parcel lev=0',par_lev,lev,par_pres,temp_par,thread
 		  STOP
 		end if
 
@@ -1835,7 +1837,7 @@ MODULE input_data_handling_wrf
 
 	!***********************************************************************
 
-	SUBROUTINE get_data(precip,evap,u,v,w,t,q,qc,qt,pp,pb,pbl_hgt,psfc)
+	SUBROUTINE get_data(precip,evap,u,v,w,t,q,qc,qt,pp,pb,pbl_hgt,psfc,tcw)
 	!-----------------------------------------------
 	! read in the data for the first time
 	!-----------------------------------------------
@@ -1849,6 +1851,9 @@ MODULE input_data_handling_wrf
 		REAL, DIMENSION(:,:,:) :: precip,evap,pbl_hgt,psfc
 		REAL, DIMENSION(:,:,:,:) :: u,v,w,t,q,qc,qt,pp,pb
 		REAL, DIMENSION(SIZE(u,1),SIZE(u,2),SIZE(u,3),datadaysteps) :: temp
+
+		!!! Not used for WRF
+		REAL, DIMENSION(:,:,:) :: tcw
 
 		CHARACTER(LEN=100) :: filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P
 
@@ -2302,20 +2307,19 @@ MODULE input_data_handling_wrf
 
 	END SUBROUTINE get_data_mixtot
 
-	SUBROUTINE get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents, i_offset, j_offset, k_offset)
+	SUBROUTINE get_grid_data(ptop, delx, datatstep, lat2d, lon2d, extents)
 
-		USE global_data, ONLY: syear, smon, sday, dirdata_atm, totpts, bdy
+		USE global_data, ONLY: syear, smon, sday, dirdata_atm, totpts, bdy, dim_i, dim_j, dim_k, dim_i_start, dim_j_start, dim_k_start
 		USE util, ONLY: int_to_string, handle_err, all_positive_longitude
 		USE netcdf
 
 		IMPLICIT NONE
 
 		REAL,INTENT(OUT)              :: ptop, delx
-		INTEGER, INTENT(OUT)          :: datatstep, dim_i, dim_j, dim_k
+		INTEGER, INTENT(OUT)          :: datatstep
 		REAL,ALLOCATABLE,DIMENSION(:,:), INTENT(OUT) :: lat2d,lon2d
 		!!! extents does nothing for this verison of the subroutine
 		REAL,DIMENSION(6), INTENT(IN),OPTIONAL :: extents
-		INTEGER, INTENT(OUT), OPTIONAL         :: i_offset, j_offset, k_offset
 
 		!!! Locals
 		CHARACTER(LEN=100):: fname
@@ -2397,24 +2401,20 @@ MODULE input_data_handling_wrf
 
 		lon2d=lon2d_corrected
 
-		if ( present(i_offset) ) i_offset = bdy
-		if ( present(j_offset) ) j_offset = bdy
-		if ( present(k_offset) ) k_offset = 1
-
-		write(*,*) i_offset, j_offset
+		dim_i_start = bdy
+		dim_j_start = bdy
+		dim_k_start = 1
 
 	END SUBROUTINE get_grid_data
 
-	SUBROUTINE get_watershed(dim_i,dim_j,dim_i_start,dim_j_start,wsmask)
+	SUBROUTINE get_watershed(wsmask)
 
-		USE global_data, ONLY: bdy, diri, fwshed_era5
+		USE global_data, ONLY: bdy, diri, fwshed, dim_i, dim_j, dim_i_start, dim_j_start
 		USE util, ONLY: handle_err
 		USE netcdf
 
 		IMPLICIT NONE
 
-		INTEGER, INTENT(IN) :: dim_i, dim_j
-		INTEGER, INTENT(IN) :: dim_i_start, dim_j_start
 		INTEGER, ALLOCATABLE, DIMENSION(:,:), INTENT(OUT) :: wsmask
 
 		!!! Locals
@@ -2432,8 +2432,6 @@ MODULE input_data_handling_wrf
 		status = nf90_inq_varid(wsncid, "wsmask", wsid)  !watershed mask
 		if(status /= nf90_NoErr) call handle_err(status)
 
-		write(*,*) dim_j_start, dim_j_start, dim_i, dim_j
-
 		status = nf90_get_var(wsncid, wsid, wsmask,start=(/dim_j_start,dim_i_start/),count=(/dim_j,dim_i/))
 		if(status /= nf90_NoErr) call handle_err(status)
 
@@ -2450,81 +2448,352 @@ MODULE input_data_handling_era5
 
 	IMPLICIT NONE
 
+	INTERFACE get_era5_field
+		MODULE PROCEDURE :: get_era5_field_r1, get_era5_field_r2, get_era5_field_r3, get_era5_field_r4
+	END INTERFACE
+
 	CONTAINS
 
-	SUBROUTINE get_filename(d,mn,yr,filename_ext_RAIN,filename_ext_LH,filename_ext_Psfc, filename_ext_Plev, filename_ext_u, filename_ext_v, filename_ext_w, filename_ext_T, filename_ext_q,filename_ext_clwc, filename_ext_ciwc, filename_ext_cswc, filename_ext_crwc, filename_ext_PBLH, filename_ext_tcw)
+	FUNCTION era5_var_k_v_store(k)
+
+		CHARACTER(LEN=*), INTENT(IN) :: k
+		CHARACTER(LEN=5) :: era5_var_k_v_store
+
+		SELECT CASE (k)
+		CASE ("RAIN")
+			era5_var_k_v_store = "tp"
+		CASE ("LH")
+			 era5_var_k_v_store = "mslhf"
+		CASE ("Psfc")
+			era5_var_k_v_store = "sp"
+		!CASE ("u")
+		!	write(fn,'(a,i4.4,a)') "pressure-levels/reanalysis/u/",yr,"/u_era5_oper_pl_"//suffix               ! CHECKED (assuming v,w also ok)
+		!!! Get pressure levels from the coords of one of these files
+		!!filename_ext_Plev = "ERA5_4D_pressure.nc"                                               ! Talk to Jason about this
+		!CASE ("v")
+		!	write(fn,'(a,i4.4,a)') "pressure-levels/reanalysis/v/",yr,"/v_era5_oper_pl_"//suffix
+		!CASE ("w")
+		!	write(fn,'(a,i4.4,a)') "pressure-levels/reanalysis/w/",yr,"/w_era5_oper_pl_"//suffix
+		CASE ("T")
+			era5_var_k_v_store = "t"
+		!CASE ("q")
+		!	write(fn,'(a,i4.4,a)') "pressure-levels/reanalysis/q/",yr,"/q_era5_oper_pl_"//suffix         ! CHECKED
+		!CASE ("clwc")
+		!	write(fn,'(a,i4.4,a)') "pressure-levels/reanalysis/clwc/",yr,"/clwc_era5_oper_pl_"//suffix
+		!CASE ("ciwc")
+		!	write(fn,'(a,i4.4,a)') "pressure-levels/reanalysis/ciwc/",yr,"/ciwc_era5_oper_pl_"//suffix
+		!CASE ("cswc")
+		!	write(fn,'(a,i4.4,a)') "pressure-levels/reanalysis/cswc/",yr,"/cswc_era5_oper_pl_"//suffix
+		!CASE ("crwc")
+		!	write(fn,'(a,i4.4,a)') "pressure-levels/reanalysis/crwc/",yr,"/crwc_era5_oper_pl_"//suffix
+		CASE ("PBLH")
+			era5_var_k_v_store = "blh"
+		CASE DEFAULT
+			era5_var_k_v_store = k
+		END SELECT
+
+	END FUNCTION
+
+	!!! This series of functions assumes you've already worked out how
+	!!! big these fields are going to be
+	SUBROUTINE get_era5_field_r1(d,m,y,field,out,start,count)
+
+		USE netcdf
+		USE global_data, ONLY: dirdata_era5
+		USE util, ONLY: handle_err
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(IN) :: d,m,y
+		CHARACTER(len=*), INTENT(IN) :: field
+		REAL, DIMENSION(:) :: out
+		INTEGER, OPTIONAL, INTENT(IN) :: start, count
+
+		!!! Locals
+		CHARACTER(len=100) :: fn
+		INTEGER :: fid, vid
+		INTEGER :: status
+		INTEGER :: s,c
+		REAL    :: scale_factor, add_offset
+
+		call get_filename(d,m,y,field,fn)
+
+		status = NF90_OPEN(TRIM(fn),NF90_NOWRITE,fid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		status = nf90_inq_varid(fid, trim(era5_var_k_v_store(field)), vid)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		if(PRESENT(start)) then
+			if(PRESENT(count)) then
+				status = nf90_get_var(fid,vid,out,start=(/start/),count=(/count/))
+			else
+				status = nf90_get_var(fid,vid,out,start=(/start/))
+			end if
+		else
+			if(PRESENT(count)) then
+				status = nf90_get_var(fid,vid,out,count=(/count/))
+			else
+				status = nf90_get_var(fid,vid,out)
+			end if
+		end if
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		!!! Get scale_factor and add_offset (if any)
+    status = nf90_get_att(fid, vid, "scale_factor", scale_factor)
+    if( status /= nf90_NoErr ) then
+      !!! OK if attribute not found - set it to 1.0
+      if ( status /= nf90_eNotAtt ) call handle_err(status)
+      scale_factor = 1.0
+    endif
+
+    status = nf90_get_att(fid, vid, "add_offset", add_offset)
+    if( status /= nf90_NoErr ) then
+      !!! OK if attribute not found - set it to 0.0
+      if ( status /= nf90_eNotAtt ) call handle_err(status)
+      add_offset = 0.0
+    endif
+
+		out = scale_factor * out + add_offset
+
+	END SUBROUTINE
+
+	SUBROUTINE get_era5_field_r2(d,m,y,field,out,starts,counts)
+
+		USE netcdf
+		USE global_data, ONLY: dirdata_era5
+		USE util, ONLY: handle_err
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(IN) :: d,m,y
+		CHARACTER(len=*), INTENT(IN) :: field
+		REAL, DIMENSION(:,:) :: out
+		INTEGER, OPTIONAL, DIMENSION(2), INTENT(IN) :: starts, counts
+
+		!!! Locals
+		CHARACTER(len=100) :: fn
+		INTEGER :: fid, vid
+		INTEGER :: status
+		INTEGER :: s,c
+		REAL    :: scale_factor, add_offset
+
+		call get_filename(d,m,y,field,fn)
+
+		status = NF90_OPEN(TRIM(fn),NF90_NOWRITE,fid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		status = nf90_inq_varid(fid, trim(era5_var_k_v_store(field)), vid)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		if(PRESENT(starts)) then
+			if(PRESENT(counts)) then
+				status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+			else
+				status = nf90_get_var(fid,vid,out,start=starts)
+			end if
+		else
+			if(PRESENT(counts)) then
+				status = nf90_get_var(fid,vid,out,count=counts)
+			else
+				status = nf90_get_var(fid,vid,out)
+			end if
+		end if
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		!!! Get scale_factor and add_offset (if any)
+    status = nf90_get_att(fid, vid, "scale_factor", scale_factor)
+    if( status /= nf90_NoErr ) then
+      !!! OK if attribute not found - set it to 1.0
+      if ( status /= nf90_eNotAtt ) call handle_err(status)
+      scale_factor = 1.0
+    endif
+
+    status = nf90_get_att(fid, vid, "add_offset", add_offset)
+    if( status /= nf90_NoErr ) then
+      !!! OK if attribute not found - set it to 0.0
+      if ( status /= nf90_eNotAtt ) call handle_err(status)
+      add_offset = 0.0
+    endif
+
+		out = scale_factor * out + add_offset
+
+	END SUBROUTINE
+
+	SUBROUTINE get_era5_field_r3(d,m,y,field,out,starts,counts)
+
+		USE netcdf
+		USE global_data, ONLY: dirdata_era5
+		USE util, ONLY: handle_err
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(IN) :: d,m,y
+		CHARACTER(len=*), INTENT(IN) :: field
+		REAL, DIMENSION(:,:,:) :: out
+		INTEGER, OPTIONAL, DIMENSION(3), INTENT(IN) :: starts, counts
+
+		!!! Locals
+		CHARACTER(len=100) :: fn
+		INTEGER :: fid, vid
+		INTEGER :: status
+		INTEGER :: s,c
+		REAL    :: scale_factor, add_offset
+
+		call get_filename(d,m,y,field,fn)
+
+		status = NF90_OPEN(TRIM(fn),NF90_NOWRITE,fid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		status = nf90_inq_varid(fid, trim(era5_var_k_v_store(field)), vid)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		if(PRESENT(starts)) then
+			if(PRESENT(counts)) then
+				status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+			else
+				status = nf90_get_var(fid,vid,out,start=starts)
+			end if
+		else
+			if(PRESENT(counts)) then
+				status = nf90_get_var(fid,vid,out,count=counts)
+			else
+				status = nf90_get_var(fid,vid,out)
+			end if
+		end if
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		!!! Get scale_factor and add_offset (if any)
+    status = nf90_get_att(fid, vid, "scale_factor", scale_factor)
+    if( status /= nf90_NoErr ) then
+      !!! OK if attribute not found - set it to 1.0
+      if ( status /= nf90_eNotAtt ) call handle_err(status)
+      scale_factor = 1.0
+    endif
+
+    status = nf90_get_att(fid, vid, "add_offset", add_offset)
+    if( status /= nf90_NoErr ) then
+      !!! OK if attribute not found - set it to 0.0
+      if ( status /= nf90_eNotAtt ) call handle_err(status)
+      add_offset = 0.0
+    endif
+
+		out = scale_factor * out + add_offset
+
+	END SUBROUTINE
+
+	SUBROUTINE get_era5_field_r4(d,m,y,field,out,starts,counts)
+
+		USE netcdf
+		USE global_data, ONLY: dirdata_era5
+		USE util, ONLY: handle_err
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(IN) :: d,m,y
+		CHARACTER(len=*), INTENT(IN) :: field
+		REAL, DIMENSION(:,:,:,:) :: out
+		INTEGER, OPTIONAL, DIMENSION(4), INTENT(IN) :: starts, counts
+
+		!!! Locals
+		CHARACTER(len=100) :: fn
+		INTEGER :: fid, vid
+		INTEGER :: status
+		INTEGER :: s,c
+		REAL    :: scale_factor, add_offset
+
+		call get_filename(d,m,y,field,fn)
+
+		status = NF90_OPEN(TRIM(fn),NF90_NOWRITE,fid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		status = nf90_inq_varid(fid, trim(era5_var_k_v_store(field)), vid)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		if(PRESENT(starts)) then
+			if(PRESENT(counts)) then
+				status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+			else
+				status = nf90_get_var(fid,vid,out,start=starts)
+			end if
+		else
+			if(PRESENT(counts)) then
+				status = nf90_get_var(fid,vid,out,count=counts)
+			else
+				status = nf90_get_var(fid,vid,out)
+			end if
+		end if
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		!!! Get scale_factor and add_offset (if any)
+    status = nf90_get_att(fid, vid, "scale_factor", scale_factor)
+    if( status /= nf90_NoErr ) then
+      !!! OK if attribute not found - set it to 1.0
+      if ( status /= nf90_eNotAtt ) call handle_err(status)
+      scale_factor = 1.0
+    endif
+
+    status = nf90_get_att(fid, vid, "add_offset", add_offset)
+    if( status /= nf90_NoErr ) then
+      !!! OK if attribute not found - set it to 0.0
+      if ( status /= nf90_eNotAtt ) call handle_err(status)
+      add_offset = 0.0
+    endif
+
+		out = scale_factor * out + add_offset
+
+	END SUBROUTINE
+
+	SUBROUTINE get_filename(d,mn,yr,field,fn)
 
 		!-----------------------------------------------
 		! given the month and year get the filename extension string
 		!---------------------------------------------------
 
-		USE global_data
+		USE global_data, ONLY: dirdata_era5
 		USE util, ONLY: month_end, to_iso_date
 
 		IMPLICIT NONE
 
 		INTEGER, INTENT(IN) :: d
 		INTEGER, INTENT(IN) :: mn, yr
-		CHARACTER(LEN=100), INTENT(OUT) :: filename_ext_RAIN,filename_ext_LH,filename_ext_Psfc, filename_ext_Plev, filename_ext_u, filename_ext_v, filename_ext_w, filename_ext_T, filename_ext_q,filename_ext_clwc, filename_ext_ciwc, filename_ext_cswc, filename_ext_crwc, filename_ext_PBLH, filename_ext_tcw
+		CHARACTER(LEN=*), INTENT(IN) :: field
+		CHARACTER(LEN=100), INTENT(OUT) :: fn
 		! len('YYYYMMDD-YYYYMMDD.nc') = 20
 		CHARACTER(LEN=20) :: suffix
+		CHARACTER(LEN=5)  :: era5_field
 
 		suffix = to_iso_date(yr,mn,1)//"-"//to_iso_date(yr,mn,month_end(yr,mn))//".nc"
-		
-		write(filename_ext_RAIN,'(a,i4.4,a)') "single-levels/reanalysis/tp/",yr,"/tp_era5_oper_sfc_"//suffix   ! CHECKED
-		write(filename_ext_LH,'(a,i4.4,a)') "single-levels/reanalysis/mslhf/",yr,"/mslhf_era5_oper_sfc_"//suffix       ! CHECKED
-		write(filename_ext_Psfc,'(a,i4.4,a)') "single-levels/reanalysis/sp/",yr,"/sp_era5_oper_sfc_"//suffix           ! CHECKED
-		!!! Get pressure levels from the coords of one of these files
-		!!filename_ext_Plev = "ERA5_4D_pressure.nc"                                               ! Talk to Jason about this
-		write(filename_ext_u,'(a,i4.4,a)') "pressure-levels/reanalysis/u/",yr,"/u_era5_oper_pl_"//suffix               ! CHECKED (assuming v,w also ok)
-		write(filename_ext_v,'(a,i4.4,a)') "pressure-levels/reanalysis/v/",yr,"/v_era5_oper_pl_"//suffix
-		write(filename_ext_w,'(a,i4.4,a)') "pressure-levels/reanalysis/w/",yr,"/w_era5_oper_pl_"//suffix
-		write(filename_ext_T,'(a,i4.4,a)') "pressure-levels/reanalysis/t/",yr,"/t_era5_oper_pl_"//suffix               ! CHECKED
-		write(filename_ext_q,'(a,i4.4,a)') "pressure-levels/reanalysis/q/",yr,"/q_era5_oper_pl_"//suffix         ! CHECKED
-		write(filename_ext_clwc,'(a,i4.4,a)') "pressure-levels/reanalysis/clwc/",yr,"/clwc_era5_oper_pl_"//suffix
-		write(filename_ext_ciwc,'(a,i4.4,a)') "pressure-levels/reanalysis/ciwc/",yr,"/ciwc_era5_oper_pl_"//suffix
-		write(filename_ext_cswc,'(a,i4.4,a)') "pressure-levels/reanalysis/cswc/",yr,"/cswc_era5_oper_pl_"//suffix
-		write(filename_ext_crwc,'(a,i4.4,a)') "pressure-levels/reanalysis/crwc/",yr,"/crwc_era5_oper_pl_"//suffix
-		write(filename_ext_PBLH,'(a,i4.4,a)') "single-levels/reanalysis/blh/",yr,"/blh_era5_oper_sfc_"//suffix         ! CHECKED
-		write(filename_ext_tcw,'(a,i4.4,a)') "single-levels/reanalysis/tcw/",yr,"/tcw_era5_oper_sfc_"//suffix
+		era5_field = era5_var_k_v_store(field)
 
-		filename_ext_RAIN = ADJUSTL(filename_ext_RAIN)
-		filename_ext_LH = ADJUSTL(filename_ext_LH)
-		filename_ext_Psfc = ADJUSTL(filename_ext_Psfc)
-		filename_ext_Plev = ADJUSTL(filename_ext_Plev)
-		filename_ext_u = ADJUSTL(filename_ext_u)
-		filename_ext_v = ADJUSTL(filename_ext_v)
-		filename_ext_w = ADJUSTL(filename_ext_w)
-		filename_ext_T = ADJUSTL(filename_ext_T)
-		filename_ext_q = ADJUSTL(filename_ext_q)
-		filename_ext_clwc = ADJUSTL(filename_ext_clwc)
-		filename_ext_ciwc = ADJUSTL(filename_ext_ciwc)
-		filename_ext_cswc = ADJUSTL(filename_ext_cswc)
-		filename_ext_crwc = ADJUSTL(filename_ext_crwc)
-		filename_ext_PBLH = ADJUSTL(filename_ext_PBLH)
-		filename_ext_tcw = ADJUSTL(filename_ext_tcw)
+		SELECT CASE(trim(era5_field))
+		CASE("tp","mslhf","sp","blh","tcw")
+			write(fn,'(a,i4.4,a)') TRIM(dirdata_era5)//"single-levels/reanalysis/"//trim(era5_field)//"/",yr,"/"//trim(era5_field)//"_era5_oper_sfc_"//suffix   ! CHECKED
+		CASE DEFAULT
+			write(fn,'(a,i4.4,a)') TRIM(dirdata_era5)//"pressure-levels/reanalysis/"//trim(era5_field)//"/",yr,"/"//trim(era5_field)//"_era5_oper_pl_"//suffix   ! CHECKED
+		fn = ADJUSTL(fn)
+		END SELECT
 
 	END SUBROUTINE get_filename
 
-	SUBROUTINE get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, extents, i_offset, j_offset, k_offset)
+	SUBROUTINE get_grid_data(ptop, delx, datatstep, lat2d, lon2d, extents)
 
-		USE global_data, ONLY: syear, smon, sday, dirdata_era5, totpts, bdy, datansteps
+		USE global_data, ONLY: syear, smon, sday, dirdata_era5, totpts, bdy, datansteps, dim_i_start, dim_j_start, dim_k_start, dim_i, dim_j, dim_k
 		USE util, ONLY: int_to_string, handle_err, all_positive_longitude, to_iso_date, month_end, array_extents
 		USE netcdf
 
 		IMPLICIT NONE
 
 		REAL,INTENT(OUT)                             :: ptop, delx
-		INTEGER, INTENT(OUT)                         :: datatstep, dim_i, dim_j, dim_k
+		INTEGER, INTENT(OUT)                         :: datatstep
 		REAL,ALLOCATABLE,DIMENSION(:,:), INTENT(OUT) :: lat2d,lon2d
 		REAL,DIMENSION(6), INTENT(IN),OPTIONAL       :: extents
-		INTEGER, INTENT(OUT), OPTIONAL               :: i_offset, j_offset, k_offset
 
 		!!! Locals
 		INTEGER :: status
 		INTEGER :: headncid, tstepid, latcrsid, loncrsid, levelid
 		INTEGER :: fdim_i, fdim_j, fdim_k
-		INTEGER :: dim_i_start, dim_j_start, dim_k_start, dim_i_end, dim_j_end, dim_k_end
+		INTEGER :: dim_i_end, dim_j_end, dim_k_end
 		INTEGER :: idim
 		REAL, ALLOCATABLE, DIMENSION(:) :: lat1d, lon1d, levels
 		REAL, DIMENSION(2)              :: input_timeseries
@@ -2621,22 +2890,16 @@ MODULE input_data_handling_era5
 		! Calculation of ssdim requires delx of the grid.
 		delx=25202.112430956095
 
-		if ( present(i_offset) ) i_offset = dim_i_start
-		if ( present(j_offset) ) j_offset = dim_j_start
-		if ( present(k_offset) ) k_offset = dim_k_start
-
 	END SUBROUTINE
 
-	SUBROUTINE get_watershed(dim_i,dim_j,dim_i_start, dim_j_start, wsmask)
+	SUBROUTINE get_watershed(wsmask)
 
-		USE global_data, ONLY: diri_era5, fwshed_era5
+		USE global_data, ONLY: diri_era5, fwshed_era5,dim_i,dim_j,dim_i_start, dim_j_start
 		USE util, ONLY: handle_err
 		USE netcdf
 
 		IMPLICIT NONE
 
-		INTEGER, INTENT(IN) :: dim_i, dim_j
-		INTEGER, INTENT(IN) :: dim_i_start, dim_j_start
 		INTEGER, ALLOCATABLE, DIMENSION(:,:), INTENT(OUT) :: wsmask
 
 		!!! Locals
@@ -2662,18 +2925,197 @@ MODULE input_data_handling_era5
 
 	END SUBROUTINE
 
-	SUBROUTINE get_data(precip,evap,u,v,w,t,q,qc,qt,pp,pb,pbl_hgt,psfc)
+	!!! Future TO-DO - rewrite this and get_data to open each era5 file only once
+	!!! Future TO-DO - rewrite this to use a rolling window to avoid re-reading over
+	!!!                back trajectory days
+	SUBROUTINE get_data_mixtot(qc,qt)
 
-		USE global_data
-		USE util
+		USE global_data, ONLY: peak, datatotsteps, datadaysteps, dim_i, dim_j, dim_k, dim_i_start, dim_j_start, dim_k_start, day, mon, year, water_density, totbtadays, sday
+		USE util, ONLY: julian, gregorian, month_end
+
+		IMPLICIT NONE
+
+		REAL, DIMENSION(:,:,:,:) :: qc,qt
+
+		!!! Locals
+		REAL, DIMENSION(SIZE(qt,1),SIZE(qt,2),SIZE(qt,3),SIZE(qt,4)) :: clw,rnw,snow,ice
+		INTEGER :: jd_today, jd_before
+		INTEGER :: new_y, new_m, new_d
+		INTEGER :: i, t_start
+		REAL    :: dayend
+
+		ice = 9999.0
+
+		if (peak) then
+			dayend = day + 0.5
+		else
+			dayend = day
+		end if
+
+		if (totbtadays>1) then
+
+			call get_era5_field(day, mon, year, "clwc",  clw(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year, "crwc",  rnw(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year, "cswc", snow(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year, "ciwc",  ice(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+
+			jd_today = julian(year,mon,day)
+
+			do i = 1,totbtadays
+				jd_before = jd_today-i
+				call gregorian(jd_before,new_y,new_m,new_d)
+
+				call get_era5_field(new_d, new_m, new_y, "clwc",  clw(:,:,:,(datatotsteps-datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y, "crwc",  rnw(:,:,:,(datatotsteps-datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y, "cswc", snow(:,:,:,(datatotsteps-datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y, "ciwc",  ice(:,:,:,(datatotsteps-datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			end do
+
+			jd_before = jd_today+1
+			call gregorian(jd_before,new_y,new_m,new_d)
+
+			call get_era5_field(new_d, new_m, new_y, "clwc",  clw(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start, dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+			call get_era5_field(new_d, new_m, new_y, "crwc",  rnw(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start, dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+			call get_era5_field(new_d, new_m, new_y, "cswc", snow(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start, dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+			call get_era5_field(new_d, new_m, new_y, "ciwc",  ice(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start, dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+
+			print *,'Input mixtot file of next day (1st time step) loaded successfully'
+		else
+			print*, 'If you only want to back-track for one day, must change how input data is retrieved.'
+		end if
+
+		qc = clw + rnw + snow + ice
+		qt = qc
+
+		print *, 'finished getting data mixtot'
+		!print *, 'ice(1,1,1,:)', ice(1,1,1,:)
+
+	END SUBROUTINE
+
+	SUBROUTINE get_data(precip,evap,u,v,w,t,q,qc,qt,pp,pb,pbl_hgt,psfc,tcw)
+
+		USE global_data, ONLY: day, mon, year, dim_i, dim_j, dim_k, dim_i_start, dim_j_start, dim_k_start, sday, datadaysteps, totbtadays, datatotsteps, sday, syear, smon, peak, water_density, Lv, dirdata_era5
+		USE util, ONLY: julian, gregorian, to_iso_date, month_end, handle_err
 		USE netcdf
 
 		IMPLICIT NONE
 
-		REAL, DIMENSION(:,:,:) :: precip,evap,pbl_hgt,psfc
-		REAL, DIMENSION(:,:,:,:) :: u,v,w,t,q,qc,qt,pp,pb
-		REAL, DIMENSION(SIZE(u,1),SIZE(u,2),SIZE(u,3),datadaysteps) :: temp
-	
+		REAL, DIMENSION(:,:,:) :: precip,evap,pbl_hgt,psfc,tcw
+		REAL, DIMENSION(:,:,:,:) :: u,v,w,t,q,qc,qt,pp
+		!REAL, DIMENSION(SIZE(u,1),SIZE(u,2),SIZE(u,3),datadaysteps) :: temp
+
+		!!! Not used for ERA5
+		REAL, DIMENSION(:,:,:,:) :: pb
+
+		!!! Locals
+		INTEGER :: jd_today, jd_before, new_y, new_m, new_d
+		INTEGER :: i, ik, it
+		INTEGER :: status, headncid, levelid, fdim_k
+		REAL :: dayend
+		CHARACTER(len=100) :: fname
+		REAL, ALLOCATABLE, DIMENSION(:) :: levels
+
+		call get_data_mixtot(qc,qt)
+
+		!if this is a day around a storm peak we want the half day after as well
+		if (peak) then
+		  dayend = day + 0.5
+		else
+		  dayend = day
+		end if
+
+		print *, 'up to start of loading get data'
+
+		if (totbtadays>1) then
+
+			call get_era5_field(day, mon, year, "RAIN", precip, starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+
+			call get_era5_field(day, mon, year,  "LH",   evap(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+			call get_era5_field(day, mon, year,"Psfc",   psfc(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+			call get_era5_field(day, mon, year,"PBLH",pbl_hgt(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+			call get_era5_field(day, mon, year, "tcw",    tcw(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+
+			call get_era5_field(day, mon, year,"q",q(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"u",u(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"v",v(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"w",w(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"T",t(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+
+			! Get julian day of current day
+			jd_today = julian(year,mon,day)
+			print *,'jd_today=',jd_today
+
+			do i = 1,totbtadays
+				jd_before = jd_today-i
+				call gregorian(jd_before,new_y,new_m,new_d)
+
+				call get_era5_field(new_d, new_m, new_y,   "LH",   evap(:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start, (new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y, "Psfc",   psfc(:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start, (new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y, "PBLH",pbl_hgt(:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start, (new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y,  "tcw",    tcw(:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start, (new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+
+				call get_era5_field(new_d, new_m, new_y,"q",q(:,:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y,"u",u(:,:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y,"v",v(:,:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y,"w",w(:,:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+				call get_era5_field(new_d, new_m, new_y,"T",t(:,:,:,(datatotsteps-(datadaysteps*(i+1))):(datatotsteps-(datadaysteps*i)-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+
+				print *,'Input files of days to be back-tracked loaded successfully'
+			end do
+
+			jd_before = jd_today+1
+			call gregorian(jd_before,new_y,new_m,new_d)
+
+			call get_era5_field(new_d, new_m, new_y,   "LH",   evap(:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start, (new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,1/))
+			call get_era5_field(new_d, new_m, new_y, "Psfc",   psfc(:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start, (new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,1/))
+			call get_era5_field(new_d, new_m, new_y, "PBLH",pbl_hgt(:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start, (new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,1/))
+			call get_era5_field(new_d, new_m, new_y, "tcw" ,    tcw(:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start, (new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,1/))
+
+			call get_era5_field(new_d, new_m, new_y,"q",q(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+			call get_era5_field(new_d, new_m, new_y,"u",u(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+			call get_era5_field(new_d, new_m, new_y,"v",v(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+			call get_era5_field(new_d, new_m, new_y,"w",w(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+			call get_era5_field(new_d, new_m, new_y,"T",t(:,:,:,datatotsteps:datatotsteps), starts=(/dim_j_start, dim_i_start,dim_k_start,(new_d-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,1/))
+
+			print *,'Input file of next day (1st time step) loaded successfully'
+		else
+			print*, 'If you only want to back-track for one day, must change how input data is retrieved.'
+		end if
+
+		! ERA5 mean surface latent heat flux (mslhf) is given in W/m2. The ECMWF convention for vertical fluxes is positive downwards. https://codes.ecmwf.int/grib/param-db/235034
+		! J/s/m2 * kg/J [1/Lv] * m3/kg [1/water density] * 60*60 [sec] * 1000 [mm] >> mm over the hourly data timestep
+		evap = evap*1/Lv*1/water_density*60*60*1000 ! mm over the hour data timestep
+
+		qt = qt + q ! i.e. SUM(QCLD,QRAIN,QSNOW,QICE) + QVAPOUR
+		!qt = q
+		qc = qt
+
+		!!! Pressure is special, derive it from a coordinate
+		write(fname,'(a,i4.4,a)') TRIM(dirdata_era5)//"pressure-levels/reanalysis/q/",syear,"/q_era5_oper_pl_"//to_iso_date(syear,smon,1)//"-"//to_iso_date(syear,smon,month_end(syear,smon))//".nc"
+		print *,'using header from',fname
+		status = NF90_OPEN(fname, NF90_NOWRITE, headncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_inq_dimid(headncid, "level", levelid)  ! pressure levels of dataset
+		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_inquire_dimension(headncid, levelid, len = fdim_k)
+		if (status /= NF90_NOERR) call handle_err(status)
+		allocate(levels(fdim_k))
+		status = nf90_inq_varid(headncid, "level", levelid)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_var(headncid, levelid, levels)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_close(headncid)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		do it = 1,datatotsteps
+			do ik = 1,dim_k
+				!! mBar -> Pa
+				pp(:,:,ik,it) = levels(dim_k_start-1)*100.0
+			end do
+		end do
+
+
+
 	END SUBROUTINE
 
 END MODULE input_data_handling_era5
@@ -2702,7 +3144,6 @@ PROGRAM back_traj
 	INTEGER :: spid,ptopid,delxid,latcrsid,loncrsid,terid,tstepid
 	INTEGER :: dimjid,dimiid,sigid,dimkid
 	INTEGER :: outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,latid,lonid
-	INTEGER :: dim_i_start, dim_j_start, dim_k_start
 
 	!
 	!data variables
@@ -2714,7 +3155,7 @@ PROGRAM back_traj
 	REAL,ALLOCATABLE,DIMENSION(:,:) :: terrain,WV_cont,WV_cont_day
 	!REAL,ALLOCATABLE,DIMENSION(:,:) :: WV_cont_apbl!,WV_cont_day_apbl
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: precip
-	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: evap,tpw,pbl_hgt,surf_pres,pstar,psfc
+	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: evap,tpw,pbl_hgt,surf_pres,pstar,psfc,tcw
 	REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: u,v,w,temp,act_temp,mix,pp,pb,pw,mixcld,mixtot,pres
 	!REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: pot_temp !
 	REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: unow,vnow,wnow
@@ -2740,7 +3181,6 @@ PROGRAM back_traj
 
 	!for outputting the parcel stats for each parcel
 	REAL,ALLOCATABLE,DIMENSION(:,:) :: parcel_stats
-
 
 
 	!----------------------------------------------------------------
@@ -2779,7 +3219,7 @@ PROGRAM back_traj
 
 	!----------------------------------------------------------------
 	! Get header info from first input file
-	call get_grid_data(ptop, delx, datatstep, dim_i, dim_j, dim_k, lat2d, lon2d, (/ -60.0, 0.0, 90.0, 180.0, 500.0, 1000.0 /), dim_i_start, dim_j_start, dim_k_start )
+	call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -60.0, 0.0, 90.0, 180.0, 500.0, 1000.0 /) )
 	!--------------------------------------------------------
 
 	!
@@ -2794,22 +3234,34 @@ PROGRAM back_traj
 
 	! Allocate the variable arrays
 	ALLOCATE( precip(dim_j,dim_i,datadaysteps), &
-	  evap(dim_j,dim_i,datatotsteps),u(dim_j,dim_i,dim_k,datatotsteps), &
-	  v(dim_j,dim_i,dim_k,datatotsteps),temp(dim_j,dim_i,dim_k,datatotsteps), &
-	  act_temp(dim_j,dim_i,dim_k,datatotsteps), &
+	          evap(dim_j,dim_i,datatotsteps),   &
+						 tpw(dim_j,dim_i,datatotsteps),   &
+		   surf_pres(dim_j,dim_i,datatotsteps),   &
+			   pbl_hgt(dim_j,dim_i,datatotsteps),   &
+			   pbl_lev(dim_j,dim_i,datatotsteps),   &
+            psfc(dim_j,dim_i,datatotsteps),   &
+						 tcw(dim_j,dim_i,datatotsteps),   &
+
+						   u(dim_j,dim_i,dim_k,datatotsteps), &
+	             v(dim_j,dim_i,dim_k,datatotsteps), &
+							 w(dim_j,dim_i,dim_k,datatotsteps), &
+						temp(dim_j,dim_i,dim_k,datatotsteps), &
+	      act_temp(dim_j,dim_i,dim_k,datatotsteps), &
 	! pot_temp(dim_j,dim_i,dim_k,datatotsteps), &
-	  mix(dim_j,dim_i,dim_k,datatotsteps),pp(dim_j,dim_i,dim_k,datatotsteps),pb(dim_j,dim_i,dim_k,datatotsteps), &
-	  mixtot(dim_j,dim_i,dim_k,datatotsteps), &
-	  tpw(dim_j,dim_i,datatotsteps),pw(dim_j,dim_i,dim_k,daytsteps+1), &
-	  mixcld(dim_j,dim_i,dim_k,datatotsteps),pres(dim_j,dim_i,dim_k,datatotsteps), &
-	  psfc(dim_j,dim_i,datatotsteps),surf_pres(dim_j,dim_i,datatotsteps), w(dim_j,dim_i,dim_k,datatotsteps), &
-	  pbl_hgt(dim_j,dim_i,datatotsteps),pbl_lev(dim_j,dim_i,datatotsteps), STAT = status )
+	           mix(dim_j,dim_i,dim_k,datatotsteps), &
+						  pp(dim_j,dim_i,dim_k,datatotsteps), &
+							pb(dim_j,dim_i,dim_k,datatotsteps), &
+	        mixtot(dim_j,dim_i,dim_k,datatotsteps), &
+					     pw(dim_j,dim_i,dim_k,daytsteps+1), &
+	        mixcld(dim_j,dim_i,dim_k,datatotsteps), &
+					  pres(dim_j,dim_i,dim_k,datatotsteps), &
+	                                    STAT = status )
 
 	!
 	! Read in watershed mask if required
 	!
 	if (wshed) then
-		call get_watershed(dim_i,dim_j,dim_i_start,dim_j_start,wsmask)
+		call get_watershed(wsmask)
 	end if
 
 	! Total number of grid pts inside boundaries
@@ -2834,7 +3286,7 @@ PROGRAM back_traj
 		print *,'created new out file'
 
 		! Get the variables required for back trajectory calculations for the current day
-		call get_data(precip,evap,u,v,w,temp,mix,mixcld,mixtot,pp,pb,pbl_hgt,psfc)
+		call get_data(precip,evap,u,v,w,temp,mix,mixcld,mixtot,pp,pb,pbl_hgt,psfc,tcw)
 
 		print *,'got data...'
 
@@ -2842,6 +3294,31 @@ PROGRAM back_traj
 		! In previous (MM5-based) model, surface pressure had to be calculated - not so here, it is output from wrf.
 		! Pressure at heights is calculated by adding the base state pressure to the perturbation pressure at each level.
 		! pp="P"(4d)perturbation pressure. pb="PB"(4d)base state pressure. psfc="PSFC"(3d) surface pressure.
+#if defined ERA5
+		! ERA5 gives total precipitation in m. Multiply by 1000 to get it in mm as model expects.
+		precip = precip * 1000
+		! ERA5 takes vertical fluxes as positive downwards. This means that evaporation (upwards away from the surface) will often be negative.
+		! I'm going to reverse the sign here:
+		evap = -evap
+		pres = pp ! No need to add a perturbation pressure with ERA5 data
+		surf_pres = psfc
+		! *PBL height can be calculated here.*
+		! Taking PBL height directly from ERA5.
+		pbl_lev = pbl_hgt
+		! wrfout gives T as pertubation potential temperature. Model expects actual temperature, so convert it:
+		! No need with ERA5 data
+		! call calc_actual_temp(temp,pres,act_temp)
+		act_temp = temp
+
+		print *, 'Instead of calculating pw for setting parcel release height, I am manually setting the parcel release height during testing.'
+
+		print *, 'Instead of calculating TPW, I am reading in ERA5 total column water (tcw).'
+
+		! Calculate the total precipitable water (lat,lon,time).
+		!call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
+		tpw = tcw
+
+#else
 		pres = pp + pb
 		surf_pres = psfc
 
@@ -2861,6 +3338,8 @@ PROGRAM back_traj
 		! Calculate the total precipitable water (lat,lon,time).
 		call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
 
+#endif
+
 		! Calculate the subsection x & y dimensions, based on the max distance a parcel can travel in the sim timestep
 		ssdim = (ceiling((sqrt(maxval(u)**2+maxval(v)**2)*tstep*60)/delx) *2) + 1
 
@@ -2879,9 +3358,7 @@ PROGRAM back_traj
 		!seem to work otherwise!!!????
 
 		print *, 'Starting parallelisation'
-		!$OMP PARALLEL DEFAULT(PRIVATE) COPYIN(daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts,ssdim) SHARED(pw,tpw,u,v,w,pres,act_temp,surf_pres,evap,precip,mix,mixtot,pbl_lev,lat2d,lon2d,orec,outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,wsmask)
-		!,daylist)
-
+!$OMP PARALLEL DEFAULT(PRIVATE) COPYIN(daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts,ssdim) SHARED(pw,tpw,u,v,w,pres,act_temp,surf_pres,evap,precip,mix,mixtot,pbl_lev,lat2d,lon2d,orec,outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,wsmask)
 		!allocate these arrays for each thread
 		ALLOCATE( WV_cont(dim_j,dim_i),WV_cont_day(dim_j,dim_i), &
 				!WV_cont_apbl(dim_j,dim_i),WV_cont_day_apbl(dim_j,dim_i), &
@@ -2892,8 +3369,8 @@ PROGRAM back_traj
 				tempnow(ssdim,ssdim,dim_k), &
 				STAT = status)
 
-		!$OMP DO &
-		!$OMP SCHEDULE (DYNAMIC)
+!$OMP DO &
+!$OMP SCHEDULE (DYNAMIC)
 		!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 		! FOR EVERY POINT IN THE GRID
 		!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2903,6 +3380,7 @@ PROGRAM back_traj
 			yy = 2 + (xx_omp - (xx-2)*(dim_i-2))
 
 			threadnum = OMP_GET_THREAD_NUM()
+			!threadnum = 0
 
 			! Only do something if within watershed, if we care about the watershed
 			if (wshed) then
@@ -2981,7 +3459,8 @@ PROGRAM back_traj
 
 						!determine model level from which to release parcel
 						!$OMP CRITICAL (par_rel_height)
-						call parcel_release_height(pw(xx,yy,:,tt),par_lev)
+						!call parcel_release_height(pw(xx,yy,:,tt),par_lev)
+						par_lev = 10
 						!$OMP END CRITICAL (par_rel_height)
 
 						!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -3177,7 +3656,10 @@ PROGRAM back_traj
 							!domain nor acounted for the precip in the allocated back-track period (didn't go back far enough in time).
 							!
 							if (nn==2) then
-								if (SUM(WV_cont)<0) STOP
+								if (SUM(WV_cont)<0) then
+									write(*,*) "SUM(WV_cont)<0"
+									STOP
+								end if
 								!if (SUM(WV_cont+WV_cont_apbl)<0) STOP
 							end if
 
@@ -3187,7 +3669,10 @@ PROGRAM back_traj
 						WV_cont_day = WV_cont_day + WV_cont/npar
 						!WV_cont_day_apbl = WV_cont_day_apbl + WV_cont_apbl/npar
 
-						if (par_lev==0) STOP
+						if (par_lev==0) then
+							write(*,*) "par_lev==0"
+							STOP
+						end if
 
 					end do  !mm loop
 
