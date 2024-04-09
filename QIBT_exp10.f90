@@ -926,6 +926,83 @@ MODULE bt_subs
 	END SUBROUTINE calc_tpw
 
 	!***********************************************************************
+	SUBROUTINE calc_pw_pressure_levels(mix,pres,surf_pres,pw) 
+		!------------------------------------------
+		! calculate the precipitable water from input data fields
+		! only for the day of current interest
+		! save as accumulated field from the ground up (4D field)
+		! This is used to calc parcel initial height.
+		
+		! Since ERA5 data is on pressure levels, I can input the pressures directly.
+		!-------------------------------------------------
+		
+		USE global_data, ONLY: dim_i, dim_j, dim_k, g, indatatsteps
+		
+		IMPLICIT NONE
+		
+		REAL, INTENT(IN), DIMENSION(:,:,:,:) :: mix,pres
+		REAL, INTENT(IN), DIMENSION(:,:,:) :: surf_pres
+		REAL, INTENT(OUT), DIMENSION(:,:,:,:) :: pw
+		
+		REAL, DIMENSION(dim_j,dim_i,dim_k,SIZE(mix,4)) :: dp
+		INTEGER :: k, it
+		
+		!REAL, INTENT(IN) :: ptop
+		!REAL, INTENT(IN), DIMENSION(:,:,:) :: ptop
+		
+		!
+		! calculate the change in pressure (Pa) represented by each point
+		!
+		!for highest level
+		!dp(:,:,1,:) = SUM(pres(:,:,:2,:),3)/2. - ptop
+		
+		!for the middle levels
+		!do k = 2,dim_k-1
+		!  dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2. !dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
+		!end do
+		
+		!for the lowest level
+		!dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+		
+		!!! Add a loop over time to reduce out-of-order memory access
+		do it=1,SIZE(mix,4)
+			! For the lowest level
+			dp(:,:,dim_k,it) = surf_pres(:,:,it) - pres(:,:,dim_k,it)
+		
+			! For the other layers
+			do k = 1, dim_k-1
+					dp(:,:,k,it) = pres(:,:,k+1,it) - pres(:,:,k,it)
+			end do
+		end do
+		
+		print *, 'dp(1,1,:,1)', dp(1,1,:,1)
+		print *, 'dp(1,1,1,:)', dp(1,1,1,:)
+		print *, 'dp(1,1,dim_k,:)', dp(1,1,dim_k,:)
+		
+		
+		!mass in mm
+		pw(:,:,:,::indatatsteps) = dp*mix/g
+		
+		
+		!print *, 'pw(1,1,:,1)', pw(1,1,:,1)
+		!print *, 'pw(1,1,:,2)', pw(1,1,:,2)
+		
+		!interpolate inside input data time steps
+		call lin_interp_inMM5tsteps(pw)
+		
+		
+		!accumulate from the bottom up. The precipitable water is then the total moisture in the column below it.   
+		do it=1,size(mix,4)
+			do k = dim_k-1,1,-1             ! i.e. from level 28 to 1
+				!pw(:,:,k,2:) = pw(:,:,k+1,2:) + pw(:,:,k,2:)! THE PW IS ACCUMULATED FROM THE SECOND TS ON, SO THE FIRST 10MIN IS NOT ACCUMULATED. WHY?? This only matters if tt=1. Here I change it to do all timesteps. 
+				pw(:,:,k,it) = pw(:,:,k+1,it) + pw(:,:,k,it)
+			end do
+		end do
+		! print *,shape(pw)
+		! print *,pw(1,1,1,:)
+		
+	!***********************************************************************
+	END SUBROUTINE calc_pw_pressure_levels
 
 	SUBROUTINE calc_tpw_pbl(mix,pres,surf_pres,tpw,pbl_lev)
 	!------------------------------------------
@@ -2874,7 +2951,7 @@ MODULE input_data_handling_era5
 		end do
 
 		do idim = 1,dim_i
-			lon2d(:,idim) = lon1d(dim_j_start:dim_i_end)
+			lon2d(:,idim) = lon1d(dim_j_start:dim_j_end)
 		end do
 
 		call all_positive_longitude(lon2d,lon2d)
