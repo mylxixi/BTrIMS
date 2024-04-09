@@ -3287,7 +3287,8 @@ PROGRAM back_traj
 
 	!----------------------------------------------------------------
 	! Get header info from first input file
-	call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -60.0, 0.0, 90.0, 180.0, 500.0, 1000.0 /) )
+	!!! Note that values in the extents array MUST match coord points in the data
+	call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -59.75, 0.5, 89.75, 180.0, 500.0, 1000.0 /) )
 	!--------------------------------------------------------
 
 	!
