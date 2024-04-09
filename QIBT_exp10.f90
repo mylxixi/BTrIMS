@@ -2513,7 +2513,6 @@ MODULE input_data_handling_era5
 		CHARACTER(len=100) :: fn
 		INTEGER :: fid, vid
 		INTEGER :: status
-		INTEGER :: s,c
 		REAL    :: scale_factor, add_offset
 
 		call get_filename(d,m,y,field,fn)
@@ -2575,7 +2574,6 @@ MODULE input_data_handling_era5
 		CHARACTER(len=100) :: fn
 		INTEGER :: fid, vid
 		INTEGER :: status
-		INTEGER :: s,c
 		REAL    :: scale_factor, add_offset
 
 		call get_filename(d,m,y,field,fn)
@@ -2637,7 +2635,6 @@ MODULE input_data_handling_era5
 		CHARACTER(len=100) :: fn
 		INTEGER :: fid, vid
 		INTEGER :: status
-		INTEGER :: s,c
 		REAL    :: scale_factor, add_offset
 
 		call get_filename(d,m,y,field,fn)
@@ -2699,7 +2696,6 @@ MODULE input_data_handling_era5
 		CHARACTER(len=100) :: fn
 		INTEGER :: fid, vid
 		INTEGER :: status
-		INTEGER :: s,c
 		REAL    :: scale_factor, add_offset
 
 		call get_filename(d,m,y,field,fn)
@@ -2941,7 +2937,7 @@ MODULE input_data_handling_era5
 		REAL, DIMENSION(SIZE(qt,1),SIZE(qt,2),SIZE(qt,3),SIZE(qt,4)) :: clw,rnw,snow,ice
 		INTEGER :: jd_today, jd_before
 		INTEGER :: new_y, new_m, new_d
-		INTEGER :: i, t_start
+		INTEGER :: i
 		REAL    :: dayend
 
 		ice = 9999.0
@@ -3140,11 +3136,8 @@ PROGRAM back_traj
 	!
 	!netcdf id variables
 	!
-	INTEGER :: status,headncid
-	INTEGER :: spid,ptopid,delxid,latcrsid,loncrsid,terid,tstepid
-	INTEGER :: dimjid,dimiid,sigid,dimkid
-	INTEGER :: outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,latid,lonid
-
+	INTEGER :: status
+	INTEGER :: outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid
 	!
 	!data variables
 	!
@@ -3164,7 +3157,7 @@ PROGRAM back_traj
 	INTEGER,ALLOCATABLE,DIMENSION(:,:,:) :: pbl_lev
 
 	INTEGER,ALLOCATABLE,DIMENSION(:) :: par_release
-	INTEGER :: xx,yy,tt,nn,mm,npar,orec,x,y,i,ttdata,nnMM5,ttdataday
+	INTEGER :: xx,yy,tt,nn,mm,npar,orec,x,y,ttdata,nnMM5,ttdataday
 	INTEGER :: xx_omp,threadnum,torec
 	REAL :: ttfac,nnfac,precip_here,qfac
 
