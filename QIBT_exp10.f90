@@ -76,7 +76,7 @@ SAVE
 INTEGER :: sday,smon,syear    !start day for calculations
 INTEGER :: edday,edmon,edyear !end day for calculations (Exclusive. Must be at least one day after start day)
 INTEGER :: totdays
-INTEGER, PARAMETER :: totbtadays = 2   !number of days of data to keep for bta; i.e. how far back in time to calc.
+INTEGER, PARAMETER :: totbtadays = 15   !number of days of data to keep for bta; i.e. how far back in time to calc.
                                        !must be less than days you have input data for
 INTEGER, PARAMETER :: tstep = 15   !number of minutes for back trajectory time step (simultion time step)
                       !must divide evenly into number of minutes in day 1440 and number of minutes in MM5 time step (here 180)
