@@ -96,7 +96,7 @@ CHARACTER(LEN=100), PARAMETER :: dirdata_land = "/g/data/hh5/tmp/w28/jpe561/back
 ! CHARACTER(LEN=100), PARAMETER :: dirdata_atm = "/srv/ccrc/data33/z3481416/CCRC-WRF3.6.0.5-SEB/ERA-Interim/R2_nudging/out/"
 ! CHARACTER(LEN=100), PARAMETER :: dirdata_land = "/srv/ccrc/data03/z3131380/PartB/NARCliM_postprocess/" 
 
-INTEGER, PARAMETER :: numthreads = 8   !set the number of parallel openmp threads
+INTEGER, PARAMETER :: numthreads = 48   !set the number of parallel openmp threads
 
 LOGICAL, PARAMETER :: peak = .FALSE.	!does the daylist indicate storm peaks (TRUE) or whole days (FALSE)
 
