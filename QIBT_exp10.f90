@@ -3452,8 +3452,7 @@ PROGRAM back_traj
 						!the precip produced here at this parcel time step
 						end_precip = precip(xx,yy,ttdataday)/indatatsteps
 
-                          print *, 'size(pw(xx,yy,:,tt))',size(pw(xx,yy,:,tt))
-                          print *, 'shape(pw(xx,yy,:,tt))',shape(pw(xx,yy,:,tt))
+                          print *, 'pw(xx,yy,:,tt)',pw(xx,yy,:,tt)
 
 
                           STOP
