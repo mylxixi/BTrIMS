@@ -78,9 +78,9 @@ INTEGER :: edday,edmon,edyear !end day for calculations (Exclusive. Must be at l
 INTEGER :: totdays
 INTEGER, PARAMETER :: totbtadays = 2   !number of days of data to keep for bta; i.e. how far back in time to calc.
                                        !must be less than days you have input data for
-INTEGER, PARAMETER :: tstep = 10   !number of minutes for back trajectory time step (simultion time step)
+INTEGER, PARAMETER :: tstep = 15   !number of minutes for back trajectory time step (simultion time step)
                       !must divide evenly into number of minutes in day 1440 and number of minutes in MM5 time step (here 180)
-INTEGER, PARAMETER :: nparcels = 100   !set the number of parcels to release if it rains
+INTEGER, PARAMETER :: nparcels = 50   !set the number of parcels to release if it rains
 REAL, PARAMETER :: minpre = 1   !min daily precip to deal with (mm)
 
 INTEGER, PARAMETER :: bdy = 6   !boundary layers to ignore; trajectories will be tracked to this boundary
