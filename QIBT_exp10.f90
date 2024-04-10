@@ -3305,9 +3305,14 @@ PROGRAM back_traj
 		! call calc_actual_temp(temp,pres,act_temp)
 		act_temp = temp
 
-		!!print *, 'Instead of calculating pw for setting parcel release height, I am manually setting the parcel release height during testing.'
+		! Calculate the precipitable water accumulated from the ground up on day of interest (lat,lon,height,time). 
+		! This is used to determine the parcel initial height.
+		! Note that pw has an extra timestep in length, to allow the lin_interp_inMM5tsteps(pw) to interpolate between 2 values at the end.
+		call calc_pw(mixtot(:,:,:,datatotsteps-datadaysteps:),pres(:,:,:,datatotsteps-datadaysteps:),surf_pres(:,:,datatotsteps-datadaysteps:),ptop,pw)
 
-		!!print *, 'Instead of calculating TPW, I am reading in ERA5 total column water (tcw).'
+
+		! Calculate the total precipitable water (lat,lon,time).
+		call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
 
 		! Calculate the total precipitable water (lat,lon,time).
 		!call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
@@ -3452,13 +3457,6 @@ PROGRAM back_traj
 						!the precip produced here at this parcel time step
 						end_precip = precip(xx,yy,ttdataday)/indatatsteps
 
-                          print *, 'pw(xx,yy,:,tt)',pw(xx,yy,:,tt)
-
-
-                          STOP
-
-
-                          
 
 						!determine model level from which to release parcel
 						!$OMP CRITICAL (par_rel_height)
