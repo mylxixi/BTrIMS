@@ -926,7 +926,6 @@ MODULE bt_subs
 	END SUBROUTINE calc_tpw
 
 	!***********************************************************************
-	
 
 	SUBROUTINE calc_tpw_pbl(mix,pres,surf_pres,tpw,pbl_lev)
 	!------------------------------------------
