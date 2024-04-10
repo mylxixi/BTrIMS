@@ -2841,6 +2841,7 @@ MODULE input_data_handling_era5
 		! Time dimension - just take the difference between the first two values as the file timestep
 		status = nf90_get_var(headncid, tstepid, input_timeseries, start=(/1/), count=(/2/))
 		if(status /= nf90_NoErr) call handle_err(status)
+  !!! Future TO-DO - This could be automated to read units of time from header file
 		datatstep = 60*(input_timeseries(2) - input_timeseries(1)) ! model expects timestep in minutes
 
 
@@ -3453,8 +3454,8 @@ PROGRAM back_traj
 
 						!determine model level from which to release parcel
 						!$OMP CRITICAL (par_rel_height)
-						!call parcel_release_height(pw(xx,yy,:,tt),par_lev)
-						par_lev = 10
+						call parcel_release_height(pw(xx,yy,:,tt),par_lev)
+						!!!par_lev = 10
 						!$OMP END CRITICAL (par_rel_height)
 
 						!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
