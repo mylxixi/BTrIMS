@@ -2,7 +2,7 @@
 #PBS -N QIBT_ERA5
 #PBS -P x77
 #PBS -q normal
-#PBS -l walltime=5:00:00
+#PBS -l walltime=2:00:00
 #PBS -l ncpus=48
 #PBS -l mem=48GB
 #PBS -l jobfs=10MB
