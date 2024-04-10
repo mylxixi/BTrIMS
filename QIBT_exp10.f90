@@ -103,7 +103,7 @@ LOGICAL, PARAMETER :: peak = .FALSE.	!does the daylist indicate storm peaks (TRU
 LOGICAL, PARAMETER :: wshed = .TRUE. !only calculate trajectories for watershed
 
 CHARACTER(LEN=50), PARAMETER :: fwshed = "NARCliM_AUS_land_sea_mask.nc"
-CHARACTER(LEN=50), PARAMETER :: fwshed_era5 = "ERA5_test_wsmask3.nc"
+CHARACTER(LEN=50), PARAMETER :: fwshed_era5 = "ERA5_intercomp_lon-180to180_mask_land.nc"
                                 !set to "" if no watershed
                                 !0 outside watershed, >0 inside
 
