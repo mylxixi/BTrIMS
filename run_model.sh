@@ -14,5 +14,5 @@ export OMP_STACKSIZE=2G
 export OMP_NUM_THREADS=48
 
 
-ifort -DERA5 -fpp QIBT_exp10.f90 -lnetcdff -lnetcdf -qopenmp
+ifort -DERA5 -fpp /home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/QIBT_exp10.f90 -lnetcdff -lnetcdf -qopenmp
 /home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/a.out 25 02 2022 26 02 2022 /g/data/w97/cxh603/QIBT_ERA5/outputs/era5_testing/ > /home/603/cxh603/CLEX/QIBT_ERA5/Model/terminal_output.txt
