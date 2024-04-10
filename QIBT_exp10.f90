@@ -3305,9 +3305,9 @@ PROGRAM back_traj
 		! call calc_actual_temp(temp,pres,act_temp)
 		act_temp = temp
 
-		print *, 'Instead of calculating pw for setting parcel release height, I am manually setting the parcel release height during testing.'
+		!!print *, 'Instead of calculating pw for setting parcel release height, I am manually setting the parcel release height during testing.'
 
-		print *, 'Instead of calculating TPW, I am reading in ERA5 total column water (tcw).'
+		!!print *, 'Instead of calculating TPW, I am reading in ERA5 total column water (tcw).'
 
 		! Calculate the total precipitable water (lat,lon,time).
 		!call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
