@@ -3588,6 +3588,25 @@ PROGRAM back_traj
 								end if
 							end if
 
+#if defined ERA5
+                            !was moisture contributed to the parcel?
+							!is the parcel in the pbl?
+                            ! Unlike WRF, ERA5 evap and twp units are consistent, so no need to divde by indatatsteps.   
+							!$OMP CRITICAL (wv_cont1)
+							!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
+							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
+								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+										/ (lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+							end if
+							!else
+							!  if (par_q < new_par_q-min_del_q) then
+							!    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
+							!end if
+							!end if
+							!$OMP END CRITICAL (wv_cont1)
+
+#else
+
 							!was moisture contributed to the parcel?
 							!is the parcel in the pbl?
 							! NOTE: Evap is mm/3hr, whereas tpw is mm. So we divide tpw by indatatsteps to make the units consistent.
@@ -3603,6 +3622,8 @@ PROGRAM back_traj
 							!end if
 							!end if
 							!$OMP END CRITICAL (wv_cont1)
+
+#endif
 
 							par_q = new_par_q
 
