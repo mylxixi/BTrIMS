@@ -614,14 +614,14 @@ MODULE bt_subs
 		status = nf90_put_att(outncid,wvcid,"parcels_per_grid_point",nparcels)
 		if (status /= NF90_NOERR) call handle_err(status)
 
-		!status = nf90_put_att(outncid,wvc2id,"long_name","Water Vapor Contribution above PBL")
-		!if (status /= NF90_NOERR) call handle_err(status)
-		!status = nf90_put_att(outncid,wvc2id,"units","proportion of precipitation")
-		!if (status /= NF90_NOERR) call handle_err(status)
-		!status = nf90_put_att(outncid,wvc2id,"num_boundary_layers",bdy)
-		!if (status /= NF90_NOERR) call handle_err(status)
-		!status = nf90_put_att(outncid,wvc2id,"parcels_per_grid_point",nparcels)
-		!if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_put_att(outncid,wvc2id,"long_name","Water Vapor Contribution above PBL")
+		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_put_att(outncid,wvc2id,"units","proportion of precipitation")
+		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_put_att(outncid,wvc2id,"num_boundary_layers",bdy)
+		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_put_att(outncid,wvc2id,"parcels_per_grid_point",nparcels)
+		if (status /= NF90_NOERR) call handle_err(status)
 
 		status = nf90_put_att(outncid,xlocid,"long_name","x index location of precipitation (from 0)")
 		if (status /= NF90_NOERR) call handle_err(status)
@@ -3147,7 +3147,7 @@ PROGRAM back_traj
 	INTEGER :: datatstep
 	REAL,ALLOCATABLE,DIMENSION(:,:) :: lat2d,lon2d
 	REAL,ALLOCATABLE,DIMENSION(:,:) :: terrain,WV_cont,WV_cont_day
-	!REAL,ALLOCATABLE,DIMENSION(:,:) :: WV_cont_apbl!,WV_cont_day_apbl
+	REAL,ALLOCATABLE,DIMENSION(:,:) :: WV_cont_apbl,WV_cont_day_apbl
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: precip
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: evap,tpw,pbl_hgt,surf_pres,pstar,psfc,tcw
 	REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: u,v,w,temp,act_temp,mix,pp,pb,pw,mixcld,mixtot,pres
@@ -3316,7 +3316,7 @@ PROGRAM back_traj
 
 		! Calculate the total precipitable water (lat,lon,time).
 		!call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
-		tpw = tcw
+		!tpw = tcw
 
 #else
 		pres = pp + pb
@@ -3361,7 +3361,7 @@ PROGRAM back_traj
 !$OMP PARALLEL DEFAULT(PRIVATE) COPYIN(daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts,ssdim) SHARED(pw,tpw,u,v,w,pres,act_temp,surf_pres,evap,precip,mix,mixtot,pbl_lev,lat2d,lon2d,orec,outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,wsmask)
 		!allocate these arrays for each thread
 		ALLOCATE( WV_cont(dim_j,dim_i),WV_cont_day(dim_j,dim_i), &
-				!WV_cont_apbl(dim_j,dim_i),WV_cont_day_apbl(dim_j,dim_i), &
+				WV_cont_apbl(dim_j,dim_i),WV_cont_day_apbl(dim_j,dim_i), &
 				unow(ssdim,ssdim,dim_k,2),vnow(ssdim,ssdim,dim_k,2), &
 				par_release(daytsteps), &
 				!pot_temp_then(ssdim,ssdim,dim_k), &
@@ -3397,7 +3397,7 @@ PROGRAM back_traj
 				!$OMP END CRITICAL (output_index)
 
 				WV_cont_day = 0.
-				!WV_cont_day_apbl = 0.
+				WV_cont_day_apbl = 0.
 
 
 				!
@@ -3440,7 +3440,7 @@ PROGRAM back_traj
 					do mm = 1, par_release(tt)
 
 						WV_cont = 0.
-						!WV_cont_apbl = 0.
+						WV_cont_apbl = 0.
 						qfac = 1.
 						x = xx
 						y = yy
@@ -3589,20 +3589,23 @@ PROGRAM back_traj
 							end if
 
 #if defined ERA5
+
+                            !! TO DO - create user setting whether you want to split the PBL or not
+                            
                             !was moisture contributed to the parcel?
 							!is the parcel in the pbl?
                             ! Unlike WRF, ERA5 evap and twp units are consistent, so no need to divde by indatatsteps.   
 							!$OMP CRITICAL (wv_cont1)
-							!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
-							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
-								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-										/ (lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+							if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
+    							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
+    								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+    										/ (lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+    							end if
+							else
+    							if (par_q < new_par_q-min_del_q) then
+    							    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
+    							end if
 							end if
-							!else
-							!  if (par_q < new_par_q-min_del_q) then
-							!    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
-							!end if
-							!end if
 							!$OMP END CRITICAL (wv_cont1)
 
 #else
@@ -3611,16 +3614,16 @@ PROGRAM back_traj
 							!is the parcel in the pbl?
 							! NOTE: Evap is mm/3hr, whereas tpw is mm. So we divide tpw by indatatsteps to make the units consistent.
 							!$OMP CRITICAL (wv_cont1)
-							!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
-							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
-								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+							if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
+    							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
+    								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+    							end if
+							else
+    							if (par_q < new_par_q-min_del_q) then
+    							    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
+    							end if
 							end if
-							!else
-							!  if (par_q < new_par_q-min_del_q) then
-							!    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
-							!end if
-							!end if
 							!$OMP END CRITICAL (wv_cont1)
 
 #endif
@@ -3630,15 +3633,15 @@ PROGRAM back_traj
 							!
 							!if we have accounted for all the precip  then go to next parcel
 							!
-							!if (SUM(WV_cont + WV_cont_apbl)>=1.) then
-							if (SUM(WV_cont)>=1.) then
+							if (SUM(WV_cont + WV_cont_apbl)>=1.) then
+							!if (SUM(WV_cont)>=1.) then
 								!print *,"all precip accounted (torec,wv_cont) ",torec,SUM(WV_cont + WV_cont_apbl)
-								!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
-								WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont) - 1)
-								!WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
-								!else
-								!  WV_cont_apbl(x,y) = WV_cont_apbl(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
-								!end if
+								if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
+								!WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont) - 1)
+    								WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
+								else
+    								WV_cont_apbl(x,y) = WV_cont_apbl(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
+								end if
 								EXIT
 							end if
 
@@ -3689,7 +3692,7 @@ PROGRAM back_traj
 
 						! wv_cont(x,y) is a 2d grid of E/TPW values. The grid is added to for every nn parcel back-track. E.g. in one 10min daytstep, we might release 1 parcel. This parcel will calculate the contribution from every cell in the grid. However we could release more, like 5 parcels. The contribution from the grid should be the same no matter how many parcels we release. So we take the average grid contribution per parcel released.
 						WV_cont_day = WV_cont_day + WV_cont/npar
-						!WV_cont_day_apbl = WV_cont_day_apbl + WV_cont_apbl/npar
+						WV_cont_day_apbl = WV_cont_day_apbl + WV_cont_apbl/npar
 
 						if (par_lev==0) then
 							write(*,*) "par_lev==0"
@@ -3704,12 +3707,10 @@ PROGRAM back_traj
 				!write output to netcdf file
 				!
 				!$OMP CRITICAL (output)
-				status = nf90_put_var(outncid,wvcid,WV_cont_day,start=(/1,1,torec/), &
-							count=(/dim_j,dim_i,1/))
+				status = nf90_put_var(outncid,wvcid,WV_cont_day,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
 				if(status /= nf90_NoErr) call handle_err(status)
-				!status = nf90_put_var(outncid,wvc2id,WV_cont_day_apbl,start=(/1,1,torec/), &
-				!           count=(/dim_j,dim_i,1/))
-				!if(status /= nf90_NoErr) call handle_err(status)
+				status = nf90_put_var(outncid,wvc2id,WV_cont_day_apbl,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
+				if(status /= nf90_NoErr) call handle_err(status)
 				status = nf90_put_var(outncid,xlocid,xx,start=(/torec/))
 				if(status /= nf90_NoErr) call handle_err(status)
 				status = nf90_put_var(outncid,ylocid,yy,start=(/torec/))
