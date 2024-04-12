@@ -3352,7 +3352,8 @@ PROGRAM back_traj
 
 		! *Potential temperature and equivalent potential temperature can be calculated here.*
 
-		! *PBL height can be calculated here.*
+		!calculate the model level just above the boundary layer height
+        call calc_pbl_lev(pbl_hgt,pres,surf_pres,pbl_lev)
 
 		! wrfout gives T as pertubation potential temperature. Model expects actual temperature, so convert it:
 		call calc_actual_temp(temp,pres,act_temp)
