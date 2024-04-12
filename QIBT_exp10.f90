@@ -3249,10 +3249,6 @@ PROGRAM back_traj
     print *, 'datansteps', datansteps
 
 
-
-    STOP
-
-
 	! Allocate the variable arrays
 	ALLOCATE( precip(dim_j,dim_i,datadaysteps), &
 	          evap(dim_j,dim_i,datatotsteps),   &
