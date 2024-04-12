@@ -3227,6 +3227,18 @@ PROGRAM back_traj
 	datadaysteps = 1440/datatstep           ! number of input file time steps in day
 	datatotsteps = (datadaysteps*(totbtadays+1)) + 1 ! total number of input file time steps over the back-track period
 
+
+    print *,'simulation time step [mins] (tstep): ',tstep
+    print *,'input data timestep [mins] (datatstep): ',datatstep
+    print *,'no. of time intervals per daily file (datadaysteps): ',datadaysteps
+    !print *,'no. of simulation timesteps per input file (daytsteps): ',daytsteps
+    print *, 'no. of simulation timesteps per day (daytsteps): ', daytsteps
+    print *,'no. of simulation timesteps per input file time interval (indatatsteps): ',indatatsteps
+    print *,'total no. of back-track simulation timesteps to remember (totsteps): ',totsteps
+    print *,'total no. of back-track input file time intervals (datatotsteps): ',datatotsteps
+    print *, 'datansteps', datansteps
+
+
 	! Allocate the variable arrays
 	ALLOCATE( precip(dim_j,dim_i,datadaysteps), &
 	          evap(dim_j,dim_i,datatotsteps),   &
