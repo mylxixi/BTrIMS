@@ -2887,6 +2887,12 @@ MODULE input_data_handling_era5
 		! Calculation of ssdim requires delx of the grid.
 		delx=25202.112430956095
 
+
+
+print *, 'dim_k_start,dim_k_end',dim_k_start,dim_k_end
+
+  
+
 	END SUBROUTINE
 
 	SUBROUTINE get_watershed(wsmask)
@@ -3217,6 +3223,9 @@ PROGRAM back_traj
 	call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -59.75, 0.5, 89.75, 180.0, 500.0, 1000.0 /) )
 	!--------------------------------------------------------
 
+     print *,"dim_j, dim_i, dim_k",dim_j,dim_i, dim_k
+     
+
 	!
 	! Calculate the number of trajectory time steps in a day and in input file time step
 	!
@@ -3228,6 +3237,7 @@ PROGRAM back_traj
 	datatotsteps = (datadaysteps*(totbtadays+1)) + 1 ! total number of input file time steps over the back-track period
 
 
+    
     print *,'simulation time step [mins] (tstep): ',tstep
     print *,'input data timestep [mins] (datatstep): ',datatstep
     print *,'no. of time intervals per daily file (datadaysteps): ',datadaysteps
@@ -3237,6 +3247,10 @@ PROGRAM back_traj
     print *,'total no. of back-track simulation timesteps to remember (totsteps): ',totsteps
     print *,'total no. of back-track input file time intervals (datatotsteps): ',datatotsteps
     print *, 'datansteps', datansteps
+
+
+
+    STOP
 
 
 	! Allocate the variable arrays
@@ -3309,9 +3323,10 @@ PROGRAM back_traj
 		evap = -evap
 		pres = pp ! No need to add a perturbation pressure with ERA5 data
 		surf_pres = psfc
-		! *PBL height can be calculated here.*
-		! Taking PBL height directly from ERA5.
-		pbl_lev = pbl_hgt
+
+        !calculate the model level just above the boundary layer height
+        call calc_pbl_lev(pbl_hgt,pres,surf_pres,pbl_lev)
+  
 		! wrfout gives T as pertubation potential temperature. Model expects actual temperature, so convert it:
 		! No need with ERA5 data
 		! call calc_actual_temp(temp,pres,act_temp)
