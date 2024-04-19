@@ -13,8 +13,8 @@ module load netcdf/4.7.1
 #
 # Clone the git repository
 #
-git clone https://github.com/chiaraholgate/QIBT_shared.git
-cd QIBT_shared
+git clone https://github.com/jpevans/B-TrIMS.git
+cd B-TrIMS
 
 #
 # Compile with OpenMP
