@@ -4,7 +4,11 @@
 
 
 !%%%%%%% PURPOSE %%%%%%%
-! This program calculates the quasi-isentropic back trajectories of water vapor using a method based on Dirmeyer & Brubaker, 1999, "Contrasting evaporative moisture sources during the drought of 1988 and the flood of 1993", Journal of Geophysical Research, 104 D16 pg 19,383-19,397.
+! This program calculates back trajectories of water vapor using a kinematic approach and tracking sources/sinks of water
+! It was originally based on the quasi-isentropic back trajectories of water vapor using a method based on 
+! Dirmeyer & Brubaker, 1999, "Contrasting evaporative moisture sources during the drought of 1988 and the flood of 1993", 
+! Journal of Geophysical Research, 104 D16 pg 19,383-19,397.
+! This QIBT option is still within the code but not generally used.
 !
 !%%%%%%% INPUT %%%%%%%
 ! Input data are taken from NARCliM output. 
