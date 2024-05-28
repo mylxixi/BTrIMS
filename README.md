@@ -20,18 +20,18 @@ cd B-TrIMS
 # Compile with OpenMP
 #
 # gfortran equivalent:
-# gfortran -ffree-line-length-512 -fopenmp -O3 -c QIBT_exp10.f90
-ifort -03 -fopenmp -c QIBT_exp10.f90
+# gfortran -ffree-line-length-512 -fopenmp -O3 -c B-TrIMS.f90
+ifort -03 -fopenmp -c B-TrIMS.f90
 
 #
 # Link the executable
 #
 # gfortran equivalent
-# gfortran -fopenmp -O3 -L/apps/netcdf/4.7.1/lib -lnetcdff QIBT_exp10.o -o main
-ifort -O3 -fopenmp -L/apps/netcdf/4.7.1/lib -lnetcdff QIBT_exp10.o -o main
+# gfortran -fopenmp -O3 -L/apps/netcdf/4.7.1/lib -lnetcdff B-TrIMS.o -o main
+ifort -O3 -fopenmp -L/apps/netcdf/4.7.1/lib -lnetcdff B-TrIMS.o -o main
 
 #
-# Run QIBT from 11 Jan 1980 to 13 Jan 1980, storing the results in subdirectory ./outputs
+# Run B-TrIMS from 11 Jan 1980 to 13 Jan 1980, storing the results in subdirectory ./outputs
 #
 chmod u+x main
 mkdir outputs
@@ -39,7 +39,7 @@ mkdir outputs
 #
 # PBS jobscript for Gadi
 #
-cat - <<EOF >191119-qibt.sh
+cat - <<EOF >191119-btrims.sh
 #!/bin/bash
 #PBS -q normal
 #PBS -l walltime=10:00:00
@@ -55,7 +55,7 @@ EOF
 #
 # Submit the job to Gadi normal queue
 #
-qsub 191119-qibt.sh
+qsub 191119-btrims.sh
 
 #
 # Example resource usage via qstat
