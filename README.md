@@ -13,25 +13,25 @@ module load netcdf/4.7.1
 #
 # Clone the git repository
 #
-git clone https://github.com/jpevans/B-TrIMS.git
-cd B-TrIMS
+git clone https://github.com/jpevans/BTrIMS.git
+cd BTrIMS
 
 #
 # Compile with OpenMP
 #
 # gfortran equivalent:
-# gfortran -ffree-line-length-512 -fopenmp -O3 -c B-TrIMS.f90
-ifort -03 -fopenmp -c B-TrIMS.f90
+# gfortran -ffree-line-length-512 -fopenmp -O3 -c BTrIMS.f90
+ifort -03 -fopenmp -c BTrIMS.f90
 
 #
 # Link the executable
 #
 # gfortran equivalent
-# gfortran -fopenmp -O3 -L/apps/netcdf/4.7.1/lib -lnetcdff B-TrIMS.o -o main
-ifort -O3 -fopenmp -L/apps/netcdf/4.7.1/lib -lnetcdff B-TrIMS.o -o main
+# gfortran -fopenmp -O3 -L/apps/netcdf/4.7.1/lib -lnetcdff BTrIMS.o -o main
+ifort -O3 -fopenmp -L/apps/netcdf/4.7.1/lib -lnetcdff BTrIMS.o -o main
 
 #
-# Run B-TrIMS from 11 Jan 1980 to 13 Jan 1980, storing the results in subdirectory ./outputs
+# Run BTrIMS from 11 Jan 1980 to 13 Jan 1980, storing the results in subdirectory ./outputs
 #
 chmod u+x main
 mkdir outputs
