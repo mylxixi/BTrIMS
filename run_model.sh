@@ -13,13 +13,13 @@ module load intel-compiler netcdf
 export OMP_STACKSIZE=2G
 export OMP_NUM_THREADS=48
 
-ifort -DERA5 -fpp /home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/B-TrIMS.f90 -lnetcdff -lnetcdf -qopenmp -o /home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/main
-/home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/main 25 02 2022 26 02 2022 /g/data/w97/cxh603/QIBT_ERA5/outputs/era5_testing/ > /home/603/cxh603/CLEX/QIBT_ERA5/Model/terminal_output.txt
+ifort -DERA5 -fpp /home/603/cxh603/CLEX/QIBT_ERA5/Model/BTrIMS/BTrIMS.f90 -lnetcdff -lnetcdf -qopenmp -o /home/603/cxh603/CLEX/QIBT_ERA5/Model/BTrIMS/main
+/home/603/cxh603/CLEX/QIBT_ERA5/Model/BTrIMS/main 25 02 2022 26 02 2022 /g/data/w97/cxh603/QIBT_ERA5/outputs/era5_testing/ > /home/603/cxh603/CLEX/QIBT_ERA5/Model/terminal_output.txt
 
 
-###ifort -O3 -c -DERA5 -fpp /home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/B-TrIMS.f90 -lnetcdff -lnetcdf -qopenmp -traceback
-###ifort -O3 -lnetcdff -lnetcdf -qopenmp /home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/B-TrIMS.o -o /home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/main
-###/home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/main 25 02 2022 26 02 2022 /g/data/w97/cxh603/QIBT_ERA5/outputs/era5_testing/ > /home/603/cxh603/CLEX/QIBT_ERA5/Model/terminal_output.txt
+###ifort -O3 -c -DERA5 -fpp /home/603/cxh603/CLEX/QIBT_ERA5/Model/BTrIMS/BTrIMS.f90 -lnetcdff -lnetcdf -qopenmp -traceback
+###ifort -O3 -lnetcdff -lnetcdf -qopenmp /home/603/cxh603/CLEX/QIBT_ERA5/Model/BTrIMS/BTrIMS.o -o /home/603/cxh603/CLEX/QIBT_ERA5/Model/BTrIMS/main
+###/home/603/cxh603/CLEX/QIBT_ERA5/Model/BTrIMS/main 25 02 2022 26 02 2022 /g/data/w97/cxh603/QIBT_ERA5/outputs/era5_testing/ > /home/603/cxh603/CLEX/QIBT_ERA5/Model/terminal_output.txt
 
-###ifort -DERA5 -fpp /home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/B-TrIMS.f90 -lnetcdff -lnetcdf -qopenmp
+###ifort -DERA5 -fpp /home/603/cxh603/CLEX/QIBT_ERA5/Model/BTrIMS/BTrIMS.f90 -lnetcdff -lnetcdf -qopenmp
 ###/home/603/cxh603/CLEX/QIBT_ERA5/Model/B-TrIMS/a.out 25 02 2022 26 02 2022 /g/data/w97/cxh603/QIBT_ERA5/outputs/era5_testing/ > /home/603/cxh603/CLEX/QIBT_ERA5/Model/terminal_output.txt
