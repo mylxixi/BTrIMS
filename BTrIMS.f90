@@ -1276,7 +1276,7 @@ MODULE bt_subs
 
 	!***********************************************************************
 
-	SUBROUTINE new_parcel_level_w(par_pres,pres,w,temp,mix,lev)
+	SUBROUTINE new_parcel_level_w(par_pres,pres,w,temp,mix,lev,psfc)
 	!-------------------------------------------------------------------------
 	!calculate the new parcel level given w at this location
 	!--------------------------------------------------------------------------
@@ -1285,7 +1285,7 @@ MODULE bt_subs
 
 		IMPLICIT NONE
 
-		REAL, INTENT(IN) :: w,temp,mix
+		REAL, INTENT(IN) :: w,temp,mix,psfc
 		REAL, INTENT(IN), DIMENSION(:) :: pres
 		REAL, INTENT(INOUT) :: par_pres
 		INTEGER, INTENT(OUT) :: lev
@@ -1309,7 +1309,10 @@ MODULE bt_subs
 		lev = dummy_lev(1)
 
 		!if the parcel is below the lowest model level then set it to the lowest level
-		if (par_pres > MAXVAL(pres)) par_pres = MAXVAL(pres)
+		!if (par_pres > MAXVAL(pres)) par_pres = MAXVAL(pres)
+
+  		!if the parcel is below the surface pressure then move it to 5hPa above the surface
+    		if (par_pres > psfc) par_pres = psfc + 5.
 
 		! if (lev==0) then
 		!   print *,'par_lev_w - pres_dis',(pres - par_pres),temp,w
@@ -1633,7 +1636,7 @@ MODULE bt_subs
 
 	!***********************************************************************
 
-	SUBROUTINE implicit_back_traj_w(u,v,w,temp,pres,lon2d,lat2d, &
+	SUBROUTINE implicit_back_traj_w(u,v,w,temp,pres,psfc,lon2d,lat2d, &
 					par_lon,par_lat,par_lev, &
 					par_pres,par_q,thread)
 	!-------------------------------------------------------------------------------
@@ -1641,7 +1644,7 @@ MODULE bt_subs
 	! calculate the parcels position one time step before
 	!
 	! u,v,w should only have 2 time steps in them
-	! pres should only have the end time step
+	! pres & psfc should only have the end time step
 
 	! Output parcel lat,lon, height and pressure
 	!--------------------------------------------------------------------------
@@ -1653,7 +1656,7 @@ MODULE bt_subs
 		REAL, INTENT(IN), DIMENSION(:,:,:,:) :: u,v,w
 		!INTEGER, INTENT(IN), DIMENSION(:,:) :: pbl_lev
 		REAL, INTENT(IN), DIMENSION(:,:,:) :: pres,temp
-		REAL, INTENT(IN), DIMENSION(:,:) :: lon2d,lat2d
+		REAL, INTENT(IN), DIMENSION(:,:) :: psfc,lon2d,lat2d
 		REAL, INTENT(INOUT) :: par_lon,par_lat,par_pres
 		REAL, INTENT(IN) :: par_q
 		INTEGER, INTENT(INOUT) :: par_lev
@@ -1682,7 +1685,7 @@ MODULE bt_subs
 		call bilin_interp(temp(:,:,par_lev),lon2d,lat2d,xx,yy,lon,lat,temp_par)
 		call bilin_interp(w(:,:,par_lev,2),lon2d,lat2d,xx,yy,lon,lat,w_par)
 		! Reverse vertical wind direction as you're going back in time.
-		call new_parcel_level_w(pr,pres(xx,yy,:),-1.*w_par,temp_par,par_q,lev)
+		call new_parcel_level_w(pr,pres(xx,yy,:),-1.*w_par,temp_par,par_q,lev,psfc(xx,yy))
 
 		!get u and v at new lon/lat found using first advect call above
 		call bilin_interp(u(:,:,lev,1),lon2d,lat2d,xx,yy,lon,lat,u_for)
@@ -1698,7 +1701,7 @@ MODULE bt_subs
 
 		call bilin_interp(temp(:,:,par_lev),lon2d,lat2d,xx,yy,par_lon,par_lat,temp_par)
 		call bilin_interp(w(:,:,par_lev,1),lon2d,lat2d,xx,yy,par_lon,par_lat,w_par)
-		call new_parcel_level_w(par_pres,pres(xx,yy,:),-1.*w_par,temp_par,par_q,lev)
+		call new_parcel_level_w(par_pres,pres(xx,yy,:),-1.*w_par,temp_par,par_q,lev,psfc(xx,yy))
 
 
 		if (lev==0) then
@@ -2787,6 +2790,7 @@ MODULE input_data_handling_era5
 		REAL,INTENT(OUT)                             :: ptop, delx
 		INTEGER, INTENT(OUT)                         :: datatstep
 		REAL,ALLOCATABLE,DIMENSION(:,:), INTENT(OUT) :: lat2d,lon2d
+  		!! extents = (/start_lat, end_lat, start_lon, end_lon, start_level, end_level/) level in hPa
 		REAL,DIMENSION(6), INTENT(IN),OPTIONAL       :: extents
 
 		!!! Locals
@@ -3165,6 +3169,7 @@ PROGRAM back_traj
 	REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: unow,vnow,wnow
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: pres_then,tempnow
 	!REAL,ALLOCATABLE,DIMENSION(:,:,:) :: pot_temp_then !
+ 	REAL,ALLOCATABLE,DIMENSION(:,:) :: psfc_then
 	INTEGER,ALLOCATABLE,DIMENSION(:,:,:) :: pbl_lev
 
 	INTEGER,ALLOCATABLE,DIMENSION(:) :: par_release
@@ -3224,7 +3229,8 @@ PROGRAM back_traj
 	!----------------------------------------------------------------
 	! Get header info from first input file
 	!!! Note that values in the extents array MUST match coord points in the data
-	call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -59.75, 0.5, 89.75, 180.0, 500.0, 1000.0 /) )
+ 	!!! extents = (/ start_lat, end_lat, start_lon, end_lon, start_level, end_level /) levels in hPa
+	call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -59.75, 0.5, 89.75, 180.0, 100.0, 1000.0 /) )
 	!--------------------------------------------------------
 
      print *,"dim_j, dim_i, dim_k",dim_j,dim_i, dim_k
@@ -3551,48 +3557,52 @@ PROGRAM back_traj
 							unow(:,:,:,2) = lin_interp3D(u(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
 							!$OMP END CRITICAl (unow1)
 
-							!$OMP CRITICAl (vnow1)
+							!$OMP CRITICAL (vnow1)
 							vnow(:,:,:,2) = lin_interp3D(v(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAl (vnow1)
+							!$OMP END CRITICAL (vnow1)
 
-							!$OMP CRITICAl (wnow1)
+							!$OMP CRITICAL (wnow1)
 							wnow(:,:,:,2) = lin_interp3D(w(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAl (wnow1)
+							!$OMP END CRITICAL (wnow1)
 
-							!$OMP CRITICAl (tempnow1)
+							!$OMP CRITICAL (tempnow1)
 							! The temperature (now) is used to determine the temperature of the parcel before it's advected. (The initial pressure of the parcel was already calculated before nn. Subsequent parcel pressures, as the parcel is moved backward in each time step, are determined within the back-trajectory routine, or more specifically, during the routine to determine the parcel's new height (i.e. pressure).)
 							tempnow(:,:,:) = lin_interp3D(act_temp(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAl (tempnow1)
+							!$OMP END CRITICAL (tempnow1)
 
 							! Find where you are in the nn timeseries
 							nnMM5 = INT((nn-1)/indatatsteps) + 1
 							nnfac = MOD(nn-1,indatatsteps)*1./indatatsteps
 
-							!$OMP CRITICAl (unow2)
+							!$OMP CRITICAL (unow2)
 							unow(:,:,:,1) = lin_interp3D(u(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAl (unow2)
+							!$OMP END CRITICAL (unow2)
 
-							!$OMP CRITICAl (vnow2)
+							!$OMP CRITICAL (vnow2)
 							vnow(:,:,:,1) = lin_interp3D(v(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAl (vnow2)
+							!$OMP END CRITICAL (vnow2)
 
-							!$OMP CRITICAl (wnow2)
+							!$OMP CRITICAL (wnow2)
 							wnow(:,:,:,1) = lin_interp3D(w(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAl (wnow2)
+							!$OMP END CRITICAL (wnow2)
 
-							!!$OMP CRITICAl (pot_temp2)
+							!!$OMP CRITICAL (pot_temp2)
 							!pot_temp_then(:,:,:) = lin_interp3D(pot_temp(ssx:ssx+ssdim,ssy:ssy+ssdim,:,nnMM5:nnMM5+1),nnfac)
-							!!$OMP END CRITICAl (pot_temp2)
+							!!$OMP END CRITICAL (pot_temp2)
 
-							!$OMP CRITICAl (presthen2)
+							!$OMP CRITICAL (presthen2)
 							pres_then(:,:,:) = lin_interp3D(pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAl (presthen2)
+							!$OMP END CRITICAL (presthen2)
+
+       							!$OMP CRITICAL (psfcthen)
+	      						psfc_then(:,:) = lin_interp2D(surf_pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,nnMM5:nnMM5+1),nnfac)
+	     						!$OMP END CRITICAL (psfcthen)
 
 							! SPECIFY WHICH VERSION OF THE BACK-TRAJECTORY YOU WANT TO USE
 							! Here parcels move with vertical wind speed (w) and have their new pressures calculated using actual temp
 
 							!$OMP CRITICAL (trajw)
-							call implicit_back_traj_w(unow,vnow,wnow,tempnow,pres_then,lon2d(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1),lat2d(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1),par_lon,par_lat,par_lev,par_pres,par_q,threadnum)
+							call implicit_back_traj_w(unow,vnow,wnow,tempnow,pres_then,psfc_then,lon2d(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1),lat2d(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1),par_lon,par_lat,par_lev,par_pres,par_q,threadnum)
 							!$OMP END CRITICAL (trajw)
 
 							! Find the grid cell nearest the new lat,lon of the parcel
