@@ -1439,7 +1439,7 @@ MODULE bt_subs
 
 	!***********************************************************************
 
-	SUBROUTINE implicit_back_traj(u,v,w,temp,pbl_lev,pot_temp,pres,lon2d,lat2d, &
+	SUBROUTINE implicit_back_traj(u,v,w,temp,pbl_lev,pot_temp,pres,psfc,lon2d,lat2d, &
 					par_lon,par_lat,par_lev, &
 					par_pot_temp,par_pres,par_q,thread)
 	!-------------------------------------------------------------------------------
@@ -1458,7 +1458,7 @@ MODULE bt_subs
 
 		REAL, INTENT(IN), DIMENSION(:,:,:,:) :: u,v,w
 		REAL, INTENT(IN), DIMENSION(:,:,:) :: pot_temp,pres,temp
-		REAL, INTENT(IN), DIMENSION(:,:) :: lon2d,lat2d
+		REAL, INTENT(IN), DIMENSION(:,:) :: lon2d,lat2d,psfc
 		INTEGER, INTENT(IN), DIMENSION(:,:) :: pbl_lev
 		REAL, INTENT(INOUT) :: par_lon,par_lat,par_pot_temp,par_pres
 		REAL, INTENT(IN) :: par_q
@@ -1504,7 +1504,7 @@ MODULE bt_subs
 		else
 			pr = par_pres
 			call bilin_interp(w(:,:,par_lev,2),lon2d,lat2d,xx,yy,lon,lat,w_back)
-			call new_parcel_level_w(pr,pres(xx,yy,:),w_back,temp_back,par_q,lev)
+			call new_parcel_level_w(pr,pres(xx,yy,:),w_back,temp_back,par_q,lev,psfc(xx,yy))
 		end if
 
 		!print *,'2nd',par_pres,par_pot_temp,par_lon,par_lat,par_lev,thread
@@ -1605,7 +1605,7 @@ MODULE bt_subs
 
 		else
 			call bilin_interp(w(:,:,par_lev,1),lon2d,lat2d,xx,yy,lon,lat,w_for)
-			call new_parcel_level_w(par_pres,pres(xx,yy,:),(w_back+w_for)/2.,temp_back,par_q,lev)
+			call new_parcel_level_w(par_pres,pres(xx,yy,:),(w_back+w_for)/2.,temp_back,par_q,lev,psfc(xx,yy))
 
 			!need to calculate the new parcel potential temperature
 			call bilin_interp(pot_temp(:,:,lev),lon2d,lat2d,xx,yy,par_lon,par_lat,pt1)
@@ -3118,10 +3118,11 @@ print *, 'dim_k_start,dim_k_end',dim_k_start,dim_k_end
 		status = nf90_close(headncid)
 		if(status /= nf90_NoErr) call handle_err(status)
 
+		!put the pressure values onto a 4D grid
 		do it = 1,datatotsteps
 			do ik = 1,dim_k
 				!! mBar -> Pa
-				pp(:,:,ik,it) = levels(dim_k_start-1)*100.0
+				pp(:,:,ik,it) = levels(dim_k_start-1 + ik)*100.0
 			end do
 		end do
 
@@ -3510,14 +3511,16 @@ PROGRAM back_traj
 						par_lon = lon2d(xx,yy)
 
 						!$OMP CRITICAL (par_q1)
-						! Calculate the parcel mixing ratio. This is used in the calculation of new parcel level in new_parcel_level_w.
+						! Calculate the parcel mixing ratio. This is used in the calculation of new 
+						!parcel level in new_parcel_level_w.
 						par_q = lin_interp(mixtot(xx,yy,par_lev,ttdata:ttdata+1),ttfac)
 						!$OMP END CRITICAL (par_q1)
 
 						! * Parcel potential temperature was calculated here.*
 
 						!$OMP CRITICAL (par_pres1)
-						! Calculate parcel pressure.This is used in the calculation of new parcel level in new_parcel_level_w.
+						! Calculate parcel pressure.This is used in the calculation of new 
+						! parcel level in new_parcel_level_w.
 						par_pres = lin_interp(pres(xx,yy,par_lev,ttdata:ttdata+1),ttfac)
 						!$OMP END CRITICAL (par_pres1)
 
