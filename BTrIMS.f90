@@ -4,11 +4,7 @@
 
 
 !%%%%%%% PURPOSE %%%%%%%
-! This program calculates back trajectories of water vapor using a kinematic approach and tracking sources/sinks of water
-! It was originally based on the quasi-isentropic back trajectories of water vapor using a method based on 
-! Dirmeyer & Brubaker, 1999, "Contrasting evaporative moisture sources during the drought of 1988 and the flood of 1993", 
-! Journal of Geophysical Research, 104 D16 pg 19,383-19,397.
-! This QIBT option is still within the code but not generally used.
+! This program calculates the quasi-isentropic back trajectories of water vapor using a method based on Dirmeyer & Brubaker, 1999, "Contrasting evaporative moisture sources during the drought of 1988 and the flood of 1993", Journal of Geophysical Research, 104 D16 pg 19,383-19,397.
 !
 !%%%%%%% INPUT %%%%%%%
 ! Input data are taken from NARCliM output. 
@@ -84,13 +80,13 @@ INTEGER, PARAMETER :: totbtadays = 15   !number of days of data to keep for bta;
                                        !must be less than days you have input data for
 INTEGER, PARAMETER :: tstep = 15   !number of minutes for back trajectory time step (simultion time step)
                       !must divide evenly into number of minutes in day 1440 and number of minutes in MM5 time step (here 180)
-INTEGER, PARAMETER :: nparcels = 50   !set the number of parcels to release if it rains
+INTEGER, PARAMETER :: nparcels = 10   !set the number of parcels to release if it rains
 REAL, PARAMETER :: minpre = 1   !min daily precip to deal with (mm)
 
 INTEGER, PARAMETER :: bdy = 6   !boundary layers to ignore; trajectories will be tracked to this boundary
 
 CHARACTER(LEN=50), PARAMETER :: diri = "/g/data/hh5/tmp/w28/jpe561/back_traj/" 
-CHARACTER(LEN=50), PARAMETER :: diri_era5 = "/g/data/w97/cxh603/QIBT_ERA5/"
+CHARACTER(LEN=50), PARAMETER :: diri_era5 = "/g/data/w28/jpe561/BTrIMS/"
 ! CHARACTER(LEN=50), PARAMETER :: diri = "/srv/ccrc/data03/z3131380/PartB/Masks/"
 ! CHARACTER(LEN=100), PARAMETER :: diro = "/g/data/xc0/user/Holgate/QIBT/exp02/"
 CHARACTER(LEN=100) :: diro  
@@ -107,12 +103,14 @@ LOGICAL, PARAMETER :: peak = .FALSE.	!does the daylist indicate storm peaks (TRU
 LOGICAL, PARAMETER :: wshed = .TRUE. !only calculate trajectories for watershed
 
 CHARACTER(LEN=50), PARAMETER :: fwshed = "NARCliM_AUS_land_sea_mask.nc"
-CHARACTER(LEN=50), PARAMETER :: fwshed_era5 = "ERA5_intercomp_lon-180to180_mask_land.nc"
+CHARACTER(LEN=50), PARAMETER :: fwshed_era5 = "Pakistan_mask_int_to180.nc"
                                 !set to "" if no watershed
                                 !0 outside watershed, >0 inside
 
 REAL, PARAMETER :: min_del_q = 0.0001    !the minimum change in parcel mixing ratio (kg/kg) to be considered "real"
 REAL, PARAMETER :: delta_coord = 0.0001  ! 1/10000th degree - for floating point calculations
+
+LOGICAL, PARAMETER :: eachParcel = .FALSE.   !output the data along the trajectory of each parcel
 
 
 !****************************************************
@@ -121,6 +119,7 @@ REAL, PARAMETER :: delta_coord = 0.0001  ! 1/10000th degree - for floating point
 INTEGER :: daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps
 INTEGER :: dim_i,dim_j,dim_k,fdim_i,fdim_j,ssdim
 INTEGER :: dim_i_start, dim_j_start, dim_k_start
+INTEGER :: dim_i_end, dim_j_end, dim_k_end
 INTEGER :: mon,year,dd,totpts
 INTEGER :: day
 ! Additional variable to define the number of time intervals in the input data, now that the input data is monthly instead of daily
@@ -137,12 +136,6 @@ REAL, PARAMETER :: Cl = 4400     !heat capacity of liquid water at ~-20C (J/kgK)
 REAL, PARAMETER :: pi = 3.14159265
 REAL, PARAMETER :: deg_dist = 111.   !average distance of 1 degree lat is assumed to be 111km
 REAL, PARAMETER :: water_density = 1000 ! density of water (kg/m3)
-
-COMMON /global_vars/ daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps, &
-		dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts, &
-		fdim_i,fdim_j,ssdim,diro
-
-!$OMP THREADPRIVATE(/global_vars/)
 
 END MODULE global_data
 
@@ -455,7 +448,7 @@ MODULE util
 
 	END FUNCTION month_end
 
-	SUBROUTINE array_extents(arr,in_start,in_end,i_start,i_end,reverse)
+	SUBROUTINE array_extents(arr,in_start,in_end,i_start,i_end,reverse,periodic)
 
 		USE global_data, ONLY: delta_coord
 
@@ -465,6 +458,7 @@ MODULE util
 		REAL, INTENT(IN)               :: in_start, in_end
 		INTEGER, INTENT(OUT)           :: i_start, i_end
 		LOGICAL,OPTIONAL,INTENT(IN)    :: reverse
+		LOGICAL,OPTIONAL,INTENT(IN)    :: periodic
 
 		!!! Locals
 		INTEGER :: i
@@ -472,14 +466,20 @@ MODULE util
 
 		i_start = -1
 		i_end   = -1
-		if ( in_start > in_end ) then
-			!!! Swap bounds if necessary
-			end   = in_start
-			start = in_end
+		if( .not.present(periodic) .or. .not.periodic ) then
+			if ( in_start > in_end ) then
+				!!! Swap bounds if necessary
+				end   = in_start
+				start = in_end
+			else
+				start = in_start
+				end   = in_end
+			end if
 		else
 			start = in_start
 			end   = in_end
 		end if
+
 
 		if( present(reverse) .and. reverse ) then
 			do i=1,SIZE(arr)
@@ -504,7 +504,25 @@ MODULE util
 		end if
 
 		if ( i_start == -1 ) i_start = 1
-		if ( i_end == -1 ) i_end = size(arr)
+		if ( i_end == -1 ) then
+			if ( present(periodic) .and. periodic ) then
+				!!! If we haven't found and 'end', check if we need to wrap around
+				if ( end < start ) then
+					!!! Redo the loop from the start
+					do i=1,SIZE(arr)
+						if ( i_end == -1 ) then
+							if ( abs(arr(i) - end) < delta_coord ) i_end = i
+						else
+							exit
+						end if
+					end do
+				else
+					i_end = size(arr)
+				end if
+			else
+				i_end = size(arr)
+			end if
+		end if
 
 	END SUBROUTINE array_extents
 
@@ -590,8 +608,9 @@ MODULE bt_subs
 		!
 		status = nf90_def_var(outncid,"wv_cont",nf90_float,(/jdimid,idimid,gwvcdimid/),wvcid)
 		if (status /= NF90_NOERR) call handle_err(status)
-		status = nf90_def_var(outncid,"wv_cont_apbl",nf90_float,(/jdimid,idimid,gwvcdimid/),wvc2id)
-		if (status /= NF90_NOERR) call handle_err(status)
+		!turning off apbl output
+                !status = nf90_def_var(outncid,"wv_cont_apbl",nf90_float,(/jdimid,idimid,gwvcdimid/),wvc2id)
+		!if (status /= NF90_NOERR) call handle_err(status)
 		status = nf90_def_var(outncid,"x_loc",nf90_int,(/gwvcdimid/),xlocid)
 		if (status /= NF90_NOERR) call handle_err(status)
 		status = nf90_def_var(outncid,"y_loc",nf90_int,(/gwvcdimid/),ylocid)
@@ -618,14 +637,15 @@ MODULE bt_subs
 		status = nf90_put_att(outncid,wvcid,"parcels_per_grid_point",nparcels)
 		if (status /= NF90_NOERR) call handle_err(status)
 
-		status = nf90_put_att(outncid,wvc2id,"long_name","Water Vapor Contribution above PBL")
-		if (status /= NF90_NOERR) call handle_err(status)
-		status = nf90_put_att(outncid,wvc2id,"units","proportion of precipitation")
-		if (status /= NF90_NOERR) call handle_err(status)
-		status = nf90_put_att(outncid,wvc2id,"num_boundary_layers",bdy)
-		if (status /= NF90_NOERR) call handle_err(status)
-		status = nf90_put_att(outncid,wvc2id,"parcels_per_grid_point",nparcels)
-		if (status /= NF90_NOERR) call handle_err(status)
+		!turn off apbl output
+                !status = nf90_put_att(outncid,wvc2id,"long_name","Water Vapor Contribution above PBL")
+		!if (status /= NF90_NOERR) call handle_err(status)
+		!status = nf90_put_att(outncid,wvc2id,"units","proportion of precipitation")
+		!if (status /= NF90_NOERR) call handle_err(status)
+		!status = nf90_put_att(outncid,wvc2id,"num_boundary_layers",bdy)
+		!if (status /= NF90_NOERR) call handle_err(status)
+		!status = nf90_put_att(outncid,wvc2id,"parcels_per_grid_point",nparcels)
+		!if (status /= NF90_NOERR) call handle_err(status)
 
 		status = nf90_put_att(outncid,xlocid,"long_name","x index location of precipitation (from 0)")
 		if (status /= NF90_NOERR) call handle_err(status)
@@ -663,6 +683,12 @@ MODULE bt_subs
 	END SUBROUTINE new_out_file
 
 	!***********************************************************************
+
+    
+
+     
+
+	!***********************************************************************  
 
 	REAL FUNCTION lin_interp(var,fac)
 	!---------------------------------------
@@ -799,6 +825,8 @@ MODULE bt_subs
 			end if
 		end do
 
+                !print *,"release height,pw, ",par_lev,pw
+
 		! For testing purposes only: take random number as a purely random model level, not weighted by pw.
 		!rand_num = 1 + FLOOR(size(pw)*rand_num)
 		!par_lev = rand_num
@@ -857,13 +885,27 @@ MODULE bt_subs
 		!for highest level
 		dp(:,:,1,:) = SUM(pres(:,:,:2,:),3)/2. - ptop
 
-		!for the middle levels
+		
+                !need to account for posibility that pressure levels go below the ground
+                !for the middle levels
 		do k = 2,dim_k-1
-			dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2. !dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
+                        where (pres(:,:,k+1,:) <= surf_pres(:,:,:)) 
+			        dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2. !dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
+                        elsewhere (pres(:,:,k,:) <= surf_pres(:,:,:))
+                                !for the lowest level above surface
+                                dp(:,:,k,:) = surf_pres(:,:,:) - (pres(:,:,k,:) + pres(:,:,k-1,:))/2.
+                        elsewhere
+                                dp(:,:,k,:) = 0.
+                        end where
+
 		end do
 
 		!for the lowest level
-		dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+                where (pres(:,:,dim_k,:) <= surf_pres(:,:,:))
+		        dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+                elsewhere
+                        dp(:,:,dim_k,:) = 0.
+                end where
 
 		!mass in mm
 		pw(:,:,:,::indatatsteps) = dp*mix/g
@@ -878,7 +920,7 @@ MODULE bt_subs
 			pw(:,:,k,:) = pw(:,:,k+1,:) + pw(:,:,k,:)
 		end do
 		! print *,shape(pw)
-		! print *,pw(1,1,1,:)
+		! print *,"pw ",pw(1,1,dim_k,:),surf_pres(1,1,1),ptop
 
 	END SUBROUTINE calc_pw
 
@@ -910,13 +952,34 @@ MODULE bt_subs
 		dp(:,:,1,:) = SUM(pres(:,:,:2,:),3)/2. - ptop
 
 		!for the middle levels
-		do k = 2,dim_k-1
-			dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2.
-			! equiv to (p2+p3)/2 - (p1+p2)/2 = (p3-p1)/2
-		end do
+		!do k = 2,dim_k-1
+		!	dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2.
+		!	! equiv to (p2+p3)/2 - (p1+p2)/2 = (p3-p1)/2
+		!end do
 
 		!for the lowest level
-		dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+		!dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+
+                !need to account for posibility that pressure levels go below the ground
+                !for the middle levels
+                do k = 2,dim_k-1
+                        where (pres(:,:,k+1,:) <= surf_pres(:,:,:))
+                                dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2. !dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
+                        elsewhere (pres(:,:,k,:) <= surf_pres(:,:,:))
+                                !for the lowest level above surface
+                                dp(:,:,k,:) = surf_pres(:,:,:) - (pres(:,:,k,:) + pres(:,:,k-1,:))/2.
+                        elsewhere
+                                dp(:,:,k,:) = 0.
+                        end where
+
+                end do
+
+                !for the lowest level also accounting for possibility of being below ground
+                where (pres(:,:,dim_k,:) <= surf_pres(:,:,:))
+                        dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+                elsewhere
+                        dp(:,:,dim_k,:) = 0.
+                end where
 
 		!mass in mmtpw
 		do j = 1,dim_j
@@ -933,10 +996,11 @@ MODULE bt_subs
 
 	SUBROUTINE calc_tpw_pbl(mix,pres,surf_pres,tpw,pbl_lev)
 	!------------------------------------------
-	! SUBROUTINE UNUSED
-
 	! calculate the total precipitable water in the pbl from MM5 fields
 	! at every level and time
+
+     ! pw = 1/g.rho * integral(q.dp) over p
+     ! units: pw [in meters] s-2/m . m-3/kg * kg/kg*kg/(m.s-2) recalling 1 Pa = 1 kg/(m.s-2)
 	!-------------------------------------------------
 
 		USE global_data
@@ -959,14 +1023,34 @@ MODULE bt_subs
 		dp(:,:,1,:) = SUM(pres(:,:,:2,:),3)/2.
 
 		!for the middle levels
-		do k = 2,dim_k-1
-			!dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
-			dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2.
-		end do
+		!do k = 2,dim_k-1
+		!	!dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
+		!	dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2.
+		!end do
 
 		!for the lowest level
-		dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+		!dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
 
+                !need to account for posibility that pressure levels go below the ground
+                !for the middle levels
+                do k = 2,dim_k-1
+                        where (pres(:,:,k+1,:) <= surf_pres(:,:,:))
+                                dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2. !dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
+                        elsewhere (pres(:,:,k,:) <= surf_pres(:,:,:))
+                                !for the lowest level above surface
+                                dp(:,:,k,:) = surf_pres(:,:,:) - (pres(:,:,k,:) + pres(:,:,k-1,:))/2.
+                        elsewhere
+                                dp(:,:,k,:) = 0.
+                        end where
+
+                end do
+
+                !for the lowest level
+                where (pres(:,:,dim_k,:) <= surf_pres(:,:,:))
+                        dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+                elsewhere
+                        dp(:,:,dim_k,:) = 0.
+                end where
 
 		!mass in mm
 		do j = 1,dim_j
@@ -976,6 +1060,9 @@ MODULE bt_subs
 				end do
 			end do
 		end do
+
+  print *, 'mix(1,1,:,2)',mix(1,1,:,2)
+  print *, 'dp(1,1,:,2)',dp(1,1,:,2)
 
 
 	END SUBROUTINE calc_tpw_pbl
@@ -1108,7 +1195,7 @@ MODULE bt_subs
 		! calculate pressure at the pbl height using the hydrostatic equation
 		! here I assume that the density averages 1kg m-3 in the pbl
 		!
-		pbl_pres = -1*pbl_hgt*g + surf_pres
+		pbl_pres = -1*pbl_hgt*g + surf_pres        
 
 		!
 		! calculate the model level just above the pbl height
@@ -1157,7 +1244,7 @@ MODULE bt_subs
 		!
 		!call vsCos(SIZE(lat2d(:,1))*SIZE(lat2d(1,:)), lat2d*pi/180, lcos) ! -- svetlana
 		lcos=cos(lat2d*pi/180)
-		dist = sqrt((lat2d-lat)**2 + lcos*(lon2d-lon)**2) ! --svetlana
+		dist = sqrt((lat2d-lat)**2 + (lcos*(lon2d-lon))**2) ! --svetlana
 		!  dist = (lat2d-lat)**2 + cos(lat2d*pi/180)*(lon2d-lon)**2 ! --svetlana
 
 		loc = MINLOC(dist)
@@ -1292,14 +1379,20 @@ MODULE bt_subs
 
 		INTEGER, DIMENSION(1) :: dummy_lev
 
-		!
+                !If w is in ms-1 then use this
+                !
 		! Here I use the hydrostatic eqn to calculate the change in pressure given w.
 		! deltaP = rho*g*deltaz when in hydrostatic equilibrium
 		! Note that "(1+0.61*mix)*temp" is the virtual temp. See p80 Wallace & Hobbs.
 		!
 
-		par_pres = par_pres + -1.*(par_pres/(Rd*(1+0.61*mix)*temp))*g*w*tstep*60
+		!par_pres = par_pres + -1.*(par_pres/(Rd*(1+0.61*mix)*temp))*g*w*tstep*60
 
+                !If w is in Pas-1 (so it is really omega) then use this
+                par_pres = par_pres + w*tstep*60
+
+                !if the parcel is below the surface pressure then move it to 5hPa above the surface
+                if (par_pres > psfc) par_pres = psfc - 5. 
 
 		! Find the model level where the difference in pressure between the parcel
 		! and the atmosphere is the smallest, i.e. which height in pres does the
@@ -1310,9 +1403,9 @@ MODULE bt_subs
 
 		!if the parcel is below the lowest model level then set it to the lowest level
 		!if (par_pres > MAXVAL(pres)) par_pres = MAXVAL(pres)
-
-  		!if the parcel is below the surface pressure then move it to 5hPa above the surface
-    		if (par_pres > psfc) par_pres = psfc + 5.
+                
+                !make sure the level used is above the surface pressure (not underground)
+                if (pres(lev) > psfc) lev = lev - 1
 
 		! if (lev==0) then
 		!   print *,'par_lev_w - pres_dis',(pres - par_pres),temp,w
@@ -1504,7 +1597,7 @@ MODULE bt_subs
 		else
 			pr = par_pres
 			call bilin_interp(w(:,:,par_lev,2),lon2d,lat2d,xx,yy,lon,lat,w_back)
-			call new_parcel_level_w(pr,pres(xx,yy,:),w_back,temp_back,par_q,lev,psfc(xx,yy))
+                        call new_parcel_level_w(pr,pres(xx,yy,:),w_back,temp_back,par_q,lev,psfc(xx,yy))
 		end if
 
 		!print *,'2nd',par_pres,par_pot_temp,par_lon,par_lat,par_lev,thread
@@ -1644,7 +1737,7 @@ MODULE bt_subs
 	! calculate the parcels position one time step before
 	!
 	! u,v,w should only have 2 time steps in them
-	! pres & psfc should only have the end time step
+	! pres should only have the end time step
 
 	! Output parcel lat,lon, height and pressure
 	!--------------------------------------------------------------------------
@@ -1681,6 +1774,7 @@ MODULE bt_subs
 		!calculate which vertical level that w moves us to
 		call near_pt(lon2d,lat2d,lon,lat,xx,yy)
 
+                !print *,'par_pres,psfc,pres',par_pres,psfc(xx,yy),pres(xx,yy,:)
 		pr = par_pres
 		call bilin_interp(temp(:,:,par_lev),lon2d,lat2d,xx,yy,lon,lat,temp_par)
 		call bilin_interp(w(:,:,par_lev,2),lon2d,lat2d,xx,yy,lon,lat,w_par)
@@ -1703,13 +1797,13 @@ MODULE bt_subs
 		call bilin_interp(w(:,:,par_lev,1),lon2d,lat2d,xx,yy,par_lon,par_lat,w_par)
 		call new_parcel_level_w(par_pres,pres(xx,yy,:),-1.*w_par,temp_par,par_q,lev,psfc(xx,yy))
 
-
 		if (lev==0) then
 		  print *,'parcel lev=0',par_lev,lev,par_pres,temp_par,thread
 		  STOP
 		end if
 
 		par_lev = lev
+                !print *,'parvel_lev=',par_lev
 
 	END SUBROUTINE implicit_back_traj_w
 
@@ -2506,7 +2600,7 @@ MODULE input_data_handling_era5
 	SUBROUTINE get_era5_field_r1(d,m,y,field,out,start,count)
 
 		USE netcdf
-		USE global_data, ONLY: dirdata_era5
+		USE global_data, ONLY: dirdata_era5, fdim_j, dim_j_start, dim_j_end
 		USE util, ONLY: handle_err
 
 		IMPLICIT NONE
@@ -2521,6 +2615,9 @@ MODULE input_data_handling_era5
 		INTEGER :: fid, vid
 		INTEGER :: status
 		REAL    :: scale_factor, add_offset
+		INTEGER, DIMENSION(NF90_MAX_VAR_DIMS) :: dimids
+		CHARACTER(len=NF90_MAX_NAME) :: dim_name
+		INTEGER :: lon_idx = -1
 
 		call get_filename(d,m,y,field,fn)
 
@@ -2530,9 +2627,27 @@ MODULE input_data_handling_era5
 		status = nf90_inq_varid(fid, trim(era5_var_k_v_store(field)), vid)
 		if(status /= nf90_NoErr) call handle_err(status)
 
+		!!! Are any of our variable's dimensions longitude?
+		status = nf90_inquire_variable(fid,vid,dimids=dimids)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		status = nf90_inquire_dimension(fid,dimids(1),name=dim_name)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		if ( TRIM(dim_name) == "longitude" ) then
+			lon_idx = 1
+		endif
+
 		if(PRESENT(start)) then
 			if(PRESENT(count)) then
-				status = nf90_get_var(fid,vid,out,start=(/start/),count=(/count/))
+				!!! If these conditions are true we're going to cross a periodic boundary
+				if( lon_idx > 0 .and. start + count > fdim_j ) then
+					status = nf90_get_var(fid,vid,out(:fdim_j-dim_j_start+1),start=(/dim_j_start/),count=(/fdim_j - dim_j_start + 1/))
+					if(status /= nf90_NoErr) call handle_err(status)
+					status = nf90_get_var(fid,vid,out(fdim_j-dim_j_start+2:),start=(/1/),count=(/dim_j_end/))
+				else
+					status = nf90_get_var(fid,vid,out,start=(/start/),count=(/count/))
+				end if
 			else
 				status = nf90_get_var(fid,vid,out,start=(/start/))
 			end if
@@ -2567,7 +2682,7 @@ MODULE input_data_handling_era5
 	SUBROUTINE get_era5_field_r2(d,m,y,field,out,starts,counts)
 
 		USE netcdf
-		USE global_data, ONLY: dirdata_era5
+		USE global_data, ONLY: dirdata_era5, fdim_j, dim_j_start, dim_j_end
 		USE util, ONLY: handle_err
 
 		IMPLICIT NONE
@@ -2582,6 +2697,14 @@ MODULE input_data_handling_era5
 		INTEGER :: fid, vid
 		INTEGER :: status
 		REAL    :: scale_factor, add_offset
+		INTEGER, DIMENSION(NF90_MAX_VAR_DIMS) :: dimids
+		CHARACTER(len=NF90_MAX_NAME) :: dim_name
+		INTEGER :: lon_idx = -1
+		INTEGER :: idim
+
+		INTEGER, DIMENSION(2) :: temp_starts
+		INTEGER, DIMENSION(2) :: temp_counts
+		INTEGER, DIMENSION(2,2) :: read_bounds !!! (/ (/ end1, start2 /), (/ end1, start2 /) /)
 
 		call get_filename(d,m,y,field,fn)
 
@@ -2591,9 +2714,37 @@ MODULE input_data_handling_era5
 		status = nf90_inq_varid(fid, trim(era5_var_k_v_store(field)), vid)
 		if(status /= nf90_NoErr) call handle_err(status)
 
+		!!! Are any of our variable's dimensions longitude?
+		status = nf90_inquire_variable(fid,vid,dimids=dimids)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		do idim=1,2
+			status = nf90_inquire_dimension(fid,dimids(idim),name=dim_name)
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			if ( TRIM(dim_name) == "longitude" ) then
+				lon_idx = idim
+				read_bounds(:,idim) = (/ fdim_j-dim_j_start+1, fdim_j-dim_j_start+2  /)
+			else
+				read_bounds(:,idim) = (/ size(out,dim=idim),1 /)
+			endif
+		end do
+
 		if(PRESENT(starts)) then
 			if(PRESENT(counts)) then
-				status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+				if( lon_idx > 0 .and. starts(lon_idx) + counts(lon_idx) > fdim_j ) then
+					temp_starts = starts
+					temp_counts = counts
+					temp_starts(lon_idx) = dim_j_start
+					temp_counts(lon_idx) = fdim_j - dim_j_start + 1
+					status = nf90_get_var(fid,vid,out(:read_bounds(1,1),:read_bounds(1,2)),start=temp_starts,count=temp_counts)
+					if(status /= nf90_NoErr) call handle_err(status)
+					temp_starts(lon_idx) = 1
+					temp_counts(lon_idx) = dim_j_end
+					status = nf90_get_var(fid,vid,out(read_bounds(2,1):,read_bounds(2,2):),start=temp_starts,count=temp_counts)
+				else
+					status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+				end if
 			else
 				status = nf90_get_var(fid,vid,out,start=starts)
 			end if
@@ -2628,7 +2779,7 @@ MODULE input_data_handling_era5
 	SUBROUTINE get_era5_field_r3(d,m,y,field,out,starts,counts)
 
 		USE netcdf
-		USE global_data, ONLY: dirdata_era5
+		USE global_data, ONLY: dirdata_era5, fdim_j, dim_j_start, dim_j_end
 		USE util, ONLY: handle_err
 
 		IMPLICIT NONE
@@ -2643,6 +2794,14 @@ MODULE input_data_handling_era5
 		INTEGER :: fid, vid
 		INTEGER :: status
 		REAL    :: scale_factor, add_offset
+		INTEGER, DIMENSION(NF90_MAX_VAR_DIMS) :: dimids
+		CHARACTER(len=NF90_MAX_NAME) :: dim_name
+		INTEGER :: lon_idx = -1
+		INTEGER :: idim
+
+		INTEGER, DIMENSION(3) :: temp_starts
+		INTEGER, DIMENSION(3) :: temp_counts
+		INTEGER, DIMENSION(2,3) :: read_bounds !!! (/ (/ end1, start2 /), (/ end1, start2 /), (/ end1, start2 /) /)
 
 		call get_filename(d,m,y,field,fn)
 
@@ -2652,9 +2811,37 @@ MODULE input_data_handling_era5
 		status = nf90_inq_varid(fid, trim(era5_var_k_v_store(field)), vid)
 		if(status /= nf90_NoErr) call handle_err(status)
 
+		!!! Are any of our variable's dimensions longitude?
+		status = nf90_inquire_variable(fid,vid,dimids=dimids)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		do idim=1,3
+			status = nf90_inquire_dimension(fid,dimids(idim),name=dim_name)
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			if ( TRIM(dim_name) == "longitude" ) then
+				lon_idx = idim
+				read_bounds(:,idim) = (/ fdim_j-dim_j_start+1, fdim_j-dim_j_start+2  /)
+			else
+				read_bounds(:,idim) = (/ size(out,dim=idim),1 /)
+			endif
+		end do
+
 		if(PRESENT(starts)) then
 			if(PRESENT(counts)) then
-				status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+				if( lon_idx > 0 .and. starts(lon_idx) + counts(lon_idx) > fdim_j ) then
+					temp_starts = starts
+					temp_counts = counts
+					temp_starts(lon_idx) = dim_j_start
+					temp_counts(lon_idx) = fdim_j - dim_j_start + 1
+					status = nf90_get_var(fid,vid,out(:read_bounds(1,1),:read_bounds(1,2),:read_bounds(1,3)),start=temp_starts,count=temp_counts)
+					if(status /= nf90_NoErr) call handle_err(status)
+					temp_starts(lon_idx) = 1
+					temp_counts(lon_idx) = dim_j_end
+					status = nf90_get_var(fid,vid,out(read_bounds(2,1):,read_bounds(2,2):,read_bounds(2,3):),start=temp_starts,count=temp_counts)
+				else
+					status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+				end if
 			else
 				status = nf90_get_var(fid,vid,out,start=starts)
 			end if
@@ -2668,19 +2855,19 @@ MODULE input_data_handling_era5
 		if(status /= nf90_NoErr) call handle_err(status)
 
 		!!! Get scale_factor and add_offset (if any)
-    status = nf90_get_att(fid, vid, "scale_factor", scale_factor)
-    if( status /= nf90_NoErr ) then
-      !!! OK if attribute not found - set it to 1.0
-      if ( status /= nf90_eNotAtt ) call handle_err(status)
-      scale_factor = 1.0
-    endif
+		status = nf90_get_att(fid, vid, "scale_factor", scale_factor)
+		if( status /= nf90_NoErr ) then
+		  !!! OK if attribute not found - set it to 1.0
+		  if ( status /= nf90_eNotAtt ) call handle_err(status)
+		  scale_factor = 1.0
+		endif
 
-    status = nf90_get_att(fid, vid, "add_offset", add_offset)
-    if( status /= nf90_NoErr ) then
-      !!! OK if attribute not found - set it to 0.0
-      if ( status /= nf90_eNotAtt ) call handle_err(status)
-      add_offset = 0.0
-    endif
+		status = nf90_get_att(fid, vid, "add_offset", add_offset)
+		if( status /= nf90_NoErr ) then
+		  !!! OK if attribute not found - set it to 0.0
+		  if ( status /= nf90_eNotAtt ) call handle_err(status)
+		  add_offset = 0.0
+		endif
 
 		out = scale_factor * out + add_offset
 
@@ -2689,7 +2876,7 @@ MODULE input_data_handling_era5
 	SUBROUTINE get_era5_field_r4(d,m,y,field,out,starts,counts)
 
 		USE netcdf
-		USE global_data, ONLY: dirdata_era5
+		USE global_data, ONLY: dirdata_era5, fdim_j, dim_j_start, dim_j_end, dim_i, dim_j
 		USE util, ONLY: handle_err
 
 		IMPLICIT NONE
@@ -2704,6 +2891,16 @@ MODULE input_data_handling_era5
 		INTEGER :: fid, vid
 		INTEGER :: status
 		REAL    :: scale_factor, add_offset
+		INTEGER, DIMENSION(NF90_MAX_VAR_DIMS) :: dimids
+		CHARACTER(len=NF90_MAX_NAME) :: dim_name
+		INTEGER :: lon_idx = -1
+		INTEGER :: idim
+
+		INTEGER, DIMENSION(4) :: temp_starts
+		INTEGER, DIMENSION(4) :: temp_counts
+		INTEGER, DIMENSION(2,4) :: read_bounds !!! (/ (/ end1, start2 /), (/ end1, start2 /), (/ end1, start2 /), (/ end1, start2 /) /)
+
+		INTEGER :: latid,lonid,vlatid,vlonid, stat
 
 		call get_filename(d,m,y,field,fn)
 
@@ -2713,9 +2910,37 @@ MODULE input_data_handling_era5
 		status = nf90_inq_varid(fid, trim(era5_var_k_v_store(field)), vid)
 		if(status /= nf90_NoErr) call handle_err(status)
 
+				!!! Are any of our variable's dimensions longitude?
+		status = nf90_inquire_variable(fid,vid,dimids=dimids)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		do idim=1,4
+			status = nf90_inquire_dimension(fid,dimids(idim),name=dim_name)
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			if ( TRIM(dim_name) == "longitude" ) then
+				lon_idx = idim
+				read_bounds(:,idim) = (/ fdim_j-dim_j_start+1, fdim_j-dim_j_start+2  /)
+			else
+				read_bounds(:,idim) = (/ size(out,dim=idim),1 /)
+			endif
+		end do
+
 		if(PRESENT(starts)) then
 			if(PRESENT(counts)) then
-				status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+				if( lon_idx > 0 .and. starts(lon_idx) + counts(lon_idx) > fdim_j ) then
+					temp_starts = starts
+					temp_counts = counts
+					temp_starts(lon_idx) = dim_j_start
+					temp_counts(lon_idx) = fdim_j - dim_j_start + 1
+					status = nf90_get_var(fid,vid,out(:read_bounds(1,1),:read_bounds(1,2),:read_bounds(1,3),:read_bounds(1,4)),start=temp_starts,count=temp_counts)
+					if(status /= nf90_NoErr) call handle_err(status)
+					temp_starts(lon_idx) = 1
+					temp_counts(lon_idx) = dim_j_end
+					status = nf90_get_var(fid,vid,out(read_bounds(2,1):,read_bounds(2,2):,read_bounds(2,3):,read_bounds(2,4):),start=temp_starts,count=temp_counts)
+				else
+					status = nf90_get_var(fid,vid,out,start=starts,count=counts)
+				end if
 			else
 				status = nf90_get_var(fid,vid,out,start=starts)
 			end if
@@ -2781,7 +3006,7 @@ MODULE input_data_handling_era5
 
 	SUBROUTINE get_grid_data(ptop, delx, datatstep, lat2d, lon2d, extents)
 
-		USE global_data, ONLY: syear, smon, sday, dirdata_era5, totpts, bdy, datansteps, dim_i_start, dim_j_start, dim_k_start, dim_i, dim_j, dim_k
+		USE global_data, ONLY: syear, smon, sday, dirdata_era5, totpts, bdy, datansteps, dim_i_start, dim_j_start, dim_k_start, dim_i, dim_j, dim_k, fdim_i, fdim_j, dim_i_end, dim_j_end, dim_k_end
 		USE util, ONLY: int_to_string, handle_err, all_positive_longitude, to_iso_date, month_end, array_extents
 		USE netcdf
 
@@ -2790,16 +3015,15 @@ MODULE input_data_handling_era5
 		REAL,INTENT(OUT)                             :: ptop, delx
 		INTEGER, INTENT(OUT)                         :: datatstep
 		REAL,ALLOCATABLE,DIMENSION(:,:), INTENT(OUT) :: lat2d,lon2d
-  		!! extents = (/start_lat, end_lat, start_lon, end_lon, start_level, end_level/) level in hPa
 		REAL,DIMENSION(6), INTENT(IN),OPTIONAL       :: extents
 
 		!!! Locals
 		INTEGER :: status
 		INTEGER :: headncid, tstepid, latcrsid, loncrsid, levelid
-		INTEGER :: fdim_i, fdim_j, fdim_k
-		INTEGER :: dim_i_end, dim_j_end, dim_k_end
+		INTEGER :: fdim_k
 		INTEGER :: idim
 		REAL, ALLOCATABLE, DIMENSION(:) :: lat1d, lon1d, levels
+
 		REAL, DIMENSION(2)              :: input_timeseries
 		CHARACTER(len=100) :: fname
 
@@ -2854,8 +3078,8 @@ MODULE input_data_handling_era5
 
 
 		if( present(extents) ) then
-			call array_extents(lat1d, extents(1),extents(2),dim_i_start,dim_i_end,.true.)
-			call array_extents(lon1d, extents(3),extents(4),dim_j_start,dim_j_end)
+			call array_extents(lat1d, extents(1),extents(2),dim_i_start,dim_i_end,reverse=.true.)
+			call array_extents(lon1d, extents(3),extents(4),dim_j_start,dim_j_end,periodic=.true.)
 			call array_extents(levels,extents(5),extents(6),dim_k_start,dim_k_end)
 			dim_i_start = dim_i_start + bdy
 			dim_j_start = dim_j_start + bdy
@@ -2872,7 +3096,12 @@ MODULE input_data_handling_era5
 		endif
 
 		dim_i = dim_i_end - dim_i_start + 1
-		dim_j = dim_j_end - dim_j_start + 1
+		!!! dim_j is longitude and is periodic
+		if ( dim_j_end > dim_j_start ) then
+			dim_j = dim_j_end - dim_j_start + 1
+		else
+			dim_j = fdim_j - dim_j_start + dim_j_end + 1
+		end if
 		dim_k = dim_k_end - dim_k_start + 1
 
 		allocate(lat2d(dim_j,dim_i))
@@ -2882,9 +3111,17 @@ MODULE input_data_handling_era5
 			lat2d(idim,:) = lat1d(dim_i_start:dim_i_end)
 		end do
 
-		do idim = 1,dim_i
-			lon2d(:,idim) = lon1d(dim_j_start:dim_j_end)
-		end do
+		!!! Handle periodicity in longitude
+		if ( dim_j_start < dim_j_end ) then
+			do idim = 1,dim_i
+				lon2d(:,idim) = lon1d(dim_j_start:dim_j_end)
+			end do
+		else
+			do idim = 1,dim_i
+				lon2d(1:fdim_j-dim_j_start+1,idim) = lon1d(dim_j_start:fdim_j)
+				lon2d(fdim_j-dim_j_start+2:dim_j,idim) = lon1d(1:dim_j_end)
+			end do
+		end if
 
 		call all_positive_longitude(lon2d,lon2d)
 
@@ -2897,7 +3134,7 @@ MODULE input_data_handling_era5
 
 
 
-print *, 'dim_k_start,dim_k_end',dim_k_start,dim_k_end
+print *, 'dim_k_start,dim_k_end,ptop',dim_k_start,dim_k_end,ptop
 
   
 
@@ -2905,7 +3142,7 @@ print *, 'dim_k_start,dim_k_end',dim_k_start,dim_k_end
 
 	SUBROUTINE get_watershed(wsmask)
 
-		USE global_data, ONLY: diri_era5, fwshed_era5,dim_i,dim_j,dim_i_start, dim_j_start
+		USE global_data, ONLY: diri_era5, fwshed_era5,dim_i,dim_j,dim_i_start, dim_j_start, dim_j_end, fdim_j
 		USE util, ONLY: handle_err
 		USE netcdf
 
@@ -2916,6 +3153,7 @@ print *, 'dim_k_start,dim_k_end',dim_k_start,dim_k_end
 		!!! Locals
 		INTEGER :: wsncid, wsid, status
 		CHARACTER(len=100) :: fname
+		INTEGER :: stat
 
 		fname=TRIM(diri_era5)//TRIM(fwshed_era5)
 
@@ -2928,7 +3166,13 @@ print *, 'dim_k_start,dim_k_end',dim_k_start,dim_k_end
 		status = nf90_inq_varid(wsncid, "wsmask", wsid)  !watershed mask
 		if(status /= nf90_NoErr) call handle_err(status)
 
-	  status = nf90_get_var(wsncid, wsid, wsmask,start=(/dim_j_start, dim_i_start/), count=(/dim_j, dim_i/))
+		if ( dim_j_start < dim_j_end ) then
+			status = nf90_get_var(wsncid, wsid, wsmask,start=(/dim_j_start, dim_i_start/), count=(/dim_j, dim_i/))
+		else
+			status = nf90_get_var(wsncid, wsid, wsmask(1:fdim_j-dim_j_start+1,:),start=(/dim_j_start, dim_i_start/), count=(/fdim_j-dim_j_start+1, dim_i/))
+			if(status /= nf90_NoErr) call handle_err(status)
+			status = nf90_get_var(wsncid, wsid, wsmask(fdim_j-dim_j_start+2:dim_j,:),start=(/1, dim_i_start/), count=(/dim_j_end, dim_i/))
+		end if
   	if(status /= nf90_NoErr) call handle_err(status)
 
 		status = nf90_close(wsncid)
@@ -3118,13 +3362,21 @@ print *, 'dim_k_start,dim_k_end',dim_k_start,dim_k_end
 		status = nf90_close(headncid)
 		if(status /= nf90_NoErr) call handle_err(status)
 
-		!put the pressure values onto a 4D grid
+  print *,'dim_k_start',dim_k_start
+  print *,'levels',levels
+  print *,'levels(1)',levels(1)
+  print *,'levels(dim_k)',levels(dim_k)
+  
+
 		do it = 1,datatotsteps
 			do ik = 1,dim_k
 				!! mBar -> Pa
-				pp(:,:,ik,it) = levels(dim_k_start-1 + ik)*100.0
+				!pp(:,:,ik,it) = levels(dim_k_start-1)*100.0
+                pp(:,:,ik,it) = levels(dim_k_start - 1 + ik)*100.0
 			end do
 		end do
+
+  print *, 'pp(1,1,:,1)', pp(1,1,:,1)
 
 
 
@@ -3170,8 +3422,8 @@ PROGRAM back_traj
 	REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: unow,vnow,wnow
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: pres_then,tempnow
 	!REAL,ALLOCATABLE,DIMENSION(:,:,:) :: pot_temp_then !
- 	REAL,ALLOCATABLE,DIMENSION(:,:) :: psfc_then
-	INTEGER,ALLOCATABLE,DIMENSION(:,:,:) :: pbl_lev
+	REAL,ALLOCATABLE,DIMENSION(:,:) :: psfc_then
+        INTEGER,ALLOCATABLE,DIMENSION(:,:,:) :: pbl_lev
 
 	INTEGER,ALLOCATABLE,DIMENSION(:) :: par_release
 	INTEGER :: xx,yy,tt,nn,mm,npar,orec,x,y,ttdata,nnMM5,ttdataday
@@ -3229,13 +3481,20 @@ PROGRAM back_traj
 
 	!----------------------------------------------------------------
 	! Get header info from first input file
-	!!! Note that values in the extents array MUST match coord points in the data
- 	!!! extents = (/ start_lat, end_lat, start_lon, end_lon, start_level, end_level /) levels in hPa
-	call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -59.75, 0.5, 89.75, 180.0, 100.0, 1000.0 /) )
+	!!! Note that values in the extents array MUST match coord points in the data       
+        !!! extents = (/ start_lat, end_lat, start_lon, end_lon, start_level, end_level /) levels in hPa
+        !Australia Case 
+	!call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -50.5, 0.5, 89.75, -130.0, 100.0, 1000.0 /) )
+        !Pakistan case
+        call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -40., 60., 20., -150., 100.,1000. /) )
+        !Scotland case
+        !call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ 20., 85., -180., 120., 100., 1000. /) )
 	!--------------------------------------------------------
 
      print *,"dim_j, dim_i, dim_k",dim_j,dim_i, dim_k
-     
+     !print *, 'lat2d(1,:)',lat2d(1,:)
+     !print *, 'lon2d(:,1)',lon2d(:,1)
+
 
 	!
 	! Calculate the number of trajectory time steps in a day and in input file time step
@@ -3331,8 +3590,8 @@ PROGRAM back_traj
 		pres = pp ! No need to add a perturbation pressure with ERA5 data
 		surf_pres = psfc
 
-        !calculate the model level just above the boundary layer height
-        call calc_pbl_lev(pbl_hgt,pres,surf_pres,pbl_lev)
+		!calculate the model level just above the boundary layer height
+		!call calc_pbl_lev(pbl_hgt,pres,surf_pres,pbl_lev)
   
 		! wrfout gives T as pertubation potential temperature. Model expects actual temperature, so convert it:
 		! No need with ERA5 data
@@ -3348,9 +3607,20 @@ PROGRAM back_traj
 		! Calculate the total precipitable water (lat,lon,time).
 		call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
 
-		! Calculate the total precipitable water (lat,lon,time).
-		!call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
-		!tpw = tcw
+        ! Check how tpw in the PBL differs
+        !call calc_tpw_pbl(mixtot,pres,surf_pres,tpw,pbl_lev)
+
+        !print *, 'evap(1,1,:10)',evap(1,1,:10)
+        !print *, 'tpw(1,1,:10)',tpw(1,1,:10)
+        !print *, 'pres(1,1,:,2)',pres(1,1,:,2)
+        !print *, 'psfc(1,1,2)',psfc(1,1,2)
+        !print *, 'tcw(1,1,:10)',tcw(1,1,:10)
+        !print *, 'pw(1,1,:,2)',pw(1,1,:,2)
+        !print *, 'u(1,1,:,2)',u(1,1,:,2)
+        !print *, 'v(1,1,:,2)',v(1,1,:,2)
+        !print *, 'w(1,1,:,2)',w(1,1,:,2)
+        !print *, 'pbl_lev(1,1,:10)',pbl_lev(1,1,:10)
+        !print *, 'lon2d(:,1)',lon2d(:,1)
 
 #else
 		pres = pp + pb
@@ -3360,7 +3630,7 @@ PROGRAM back_traj
 		! *Potential temperature and equivalent potential temperature can be calculated here.*
 
 		!calculate the model level just above the boundary layer height
-        call calc_pbl_lev(pbl_hgt,pres,surf_pres,pbl_lev)
+		call calc_pbl_lev(pbl_hgt,pres,surf_pres,pbl_lev)
 
 		! wrfout gives T as pertubation potential temperature. Model expects actual temperature, so convert it:
 		call calc_actual_temp(temp,pres,act_temp)
@@ -3374,6 +3644,8 @@ PROGRAM back_traj
 		call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
 
 #endif
+
+
 
 		! Calculate the subsection x & y dimensions, based on the max distance a parcel can travel in the sim timestep
 		ssdim = (ceiling((sqrt(maxval(u)**2+maxval(v)**2)*tstep*60)/delx) *2) + 1
@@ -3393,7 +3665,7 @@ PROGRAM back_traj
 		!seem to work otherwise!!!????
 
 		print *, 'Starting parallelisation'
-!$OMP PARALLEL DEFAULT(PRIVATE) COPYIN(daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts,ssdim) SHARED(pw,tpw,u,v,w,pres,act_temp,surf_pres,evap,precip,mix,mixtot,pbl_lev,lat2d,lon2d,orec,outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,wsmask)
+!$OMP PARALLEL DEFAULT(PRIVATE) SHARED(pw,tpw,u,v,w,pres,act_temp,surf_pres,evap,precip,mix,mixtot,pbl_lev,lat2d,lon2d,orec,outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,wsmask,daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts,ssdim)
 		!allocate these arrays for each thread
 		ALLOCATE( WV_cont(dim_j,dim_i),WV_cont_day(dim_j,dim_i), &
 				WV_cont_apbl(dim_j,dim_i),WV_cont_day_apbl(dim_j,dim_i), &
@@ -3401,9 +3673,14 @@ PROGRAM back_traj
 				par_release(daytsteps), &
 				!pot_temp_then(ssdim,ssdim,dim_k), &
 				pres_then(ssdim,ssdim,dim_k),wnow(ssdim,ssdim,dim_k,2), &
-				tempnow(ssdim,ssdim,dim_k), &
+				psfc_then(ssdim,ssdim),tempnow(ssdim,ssdim,dim_k), &
 				STAT = status)
 
+if (eachParcel) then
+    ALLOCATE(parcel_stats(14,totsteps), STAT = status)
+end if
+
+  
 !$OMP DO &
 !$OMP SCHEDULE (DYNAMIC)
 		!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -3428,11 +3705,19 @@ PROGRAM back_traj
 				!$OMP CRITICAL (output_index)
 				orec = orec + 1
 				torec = orec
+    
 				! *Output results per parcel can be specified here.*
+         	if (eachParcel) then
+         	  OPEN(unit=threadnum+10,file=TRIM(diro)//"parcel"//TRIM(int_to_string(dd))//"_"//TRIM(int_to_string(orec)), &
+         	  	form="UNFORMATTED",status="REPLACE") 
+         	  !print *,threadnum+10
+         	end if 
+
 				!$OMP END CRITICAL (output_index)
+    
 
 				WV_cont_day = 0.
-				WV_cont_day_apbl = 0.
+				!WV_cont_day_apbl = 0.
 
 
 				!
@@ -3475,7 +3760,7 @@ PROGRAM back_traj
 					do mm = 1, par_release(tt)
 
 						WV_cont = 0.
-						WV_cont_apbl = 0.
+						!WV_cont_apbl = 0.
 						qfac = 1.
 						x = xx
 						y = yy
@@ -3496,7 +3781,8 @@ PROGRAM back_traj
 						!determine model level from which to release parcel
 						!$OMP CRITICAL (par_rel_height)
 						call parcel_release_height(pw(xx,yy,:,tt),par_lev)
-						!!!par_lev = 10
+						print *,'psfc ',surf_pres(xx,yy,tt)
+                                                !par_lev = 35 ! this is 950hPa when loading all ERA5 model levels
 						!$OMP END CRITICAL (par_rel_height)
 
 						!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -3511,16 +3797,14 @@ PROGRAM back_traj
 						par_lon = lon2d(xx,yy)
 
 						!$OMP CRITICAL (par_q1)
-						! Calculate the parcel mixing ratio. This is used in the calculation of new 
-						!parcel level in new_parcel_level_w.
+						! Calculate the parcel mixing ratio. This is used in the calculation of new parcel level in new_parcel_level_w.
 						par_q = lin_interp(mixtot(xx,yy,par_lev,ttdata:ttdata+1),ttfac)
 						!$OMP END CRITICAL (par_q1)
 
 						! * Parcel potential temperature was calculated here.*
 
 						!$OMP CRITICAL (par_pres1)
-						! Calculate parcel pressure.This is used in the calculation of new 
-						! parcel level in new_parcel_level_w.
+						! Calculate parcel pressure.This is used in the calculation of new parcel level in new_parcel_level_w.
 						par_pres = lin_interp(pres(xx,yy,par_lev,ttdata:ttdata+1),ttfac)
 						!$OMP END CRITICAL (par_pres1)
 
@@ -3533,6 +3817,21 @@ PROGRAM back_traj
 							!advect the parcel back in time one step
 							!
 
+                            !current parcel stats
+                            if (eachParcel) then
+                                !print *,"nn ",nn,threadnum,par_lev
+                                parcel_stats(1,totsteps-daytsteps+tt+1-nn) = nn*1.
+                                parcel_stats(2,totsteps-daytsteps+tt+1-nn) = xx
+                                parcel_stats(3,totsteps-daytsteps+tt+1-nn) = yy
+                                parcel_stats(4,totsteps-daytsteps+tt+1-nn) = par_lon
+                                parcel_stats(5,totsteps-daytsteps+tt+1-nn) = par_lat
+                                parcel_stats(6,totsteps-daytsteps+tt+1-nn) = par_pres
+                                parcel_stats(7,totsteps-daytsteps+tt+1-nn) = par_lev
+                                parcel_stats(8,totsteps-daytsteps+tt+1-nn) = par_q
+                                parcel_stats(9,totsteps-daytsteps+tt+1-nn) = u(x,y,par_lev,ttdata)
+                                parcel_stats(10,totsteps-daytsteps+tt+1-nn) = v(x,y,par_lev,ttdata)
+                                parcel_stats(11,totsteps-daytsteps+tt+1-nn) = w(x,y,par_lev,ttdata)
+                            end if
 							!
 							!calculate the lower left location for the subsection
 							!
@@ -3560,46 +3859,47 @@ PROGRAM back_traj
 							unow(:,:,:,2) = lin_interp3D(u(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
 							!$OMP END CRITICAl (unow1)
 
-							!$OMP CRITICAL (vnow1)
+							!$OMP CRITICAl (vnow1)
 							vnow(:,:,:,2) = lin_interp3D(v(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAL (vnow1)
+							!$OMP END CRITICAl (vnow1)
 
-							!$OMP CRITICAL (wnow1)
+							!$OMP CRITICAl (wnow1)
 							wnow(:,:,:,2) = lin_interp3D(w(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAL (wnow1)
+							!$OMP END CRITICAl (wnow1)
 
-							!$OMP CRITICAL (tempnow1)
+							!$OMP CRITICAl (tempnow1)
 							! The temperature (now) is used to determine the temperature of the parcel before it's advected. (The initial pressure of the parcel was already calculated before nn. Subsequent parcel pressures, as the parcel is moved backward in each time step, are determined within the back-trajectory routine, or more specifically, during the routine to determine the parcel's new height (i.e. pressure).)
 							tempnow(:,:,:) = lin_interp3D(act_temp(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAL (tempnow1)
+							!$OMP END CRITICAl (tempnow1)
 
 							! Find where you are in the nn timeseries
 							nnMM5 = INT((nn-1)/indatatsteps) + 1
 							nnfac = MOD(nn-1,indatatsteps)*1./indatatsteps
 
-							!$OMP CRITICAL (unow2)
+							!$OMP CRITICAl (unow2)
 							unow(:,:,:,1) = lin_interp3D(u(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAL (unow2)
+							!$OMP END CRITICAl (unow2)
 
-							!$OMP CRITICAL (vnow2)
+							!$OMP CRITICAl (vnow2)
 							vnow(:,:,:,1) = lin_interp3D(v(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAL (vnow2)
+							!$OMP END CRITICAl (vnow2)
 
-							!$OMP CRITICAL (wnow2)
+							!$OMP CRITICAl (wnow2)
 							wnow(:,:,:,1) = lin_interp3D(w(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAL (wnow2)
+							!$OMP END CRITICAl (wnow2)
 
-							!!$OMP CRITICAL (pot_temp2)
+							!!$OMP CRITICAl (pot_temp2)
 							!pot_temp_then(:,:,:) = lin_interp3D(pot_temp(ssx:ssx+ssdim,ssy:ssy+ssdim,:,nnMM5:nnMM5+1),nnfac)
-							!!$OMP END CRITICAL (pot_temp2)
+							!!$OMP END CRITICAl (pot_temp2)
 
-							!$OMP CRITICAL (presthen2)
+							!$OMP CRITICAl (presthen2)
 							pres_then(:,:,:) = lin_interp3D(pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-							!$OMP END CRITICAL (presthen2)
+							!$OMP END CRITICAl (presthen2)
 
-       							!$OMP CRITICAL (psfcthen)
-	      						psfc_then(:,:) = lin_interp2D(surf_pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,nnMM5:nnMM5+1),nnfac)
-	     						!$OMP END CRITICAL (psfcthen)
+                                                        !$OMP CRITICAl (psfcthen)
+                                                        psfc_then(:,:) = lin_interp2D(surf_pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,nnMM5:nnMM5+1),nnfac)
+                                                        !$OMP END CRITICAl (psfcthen)
+
 
 							! SPECIFY WHICH VERSION OF THE BACK-TRAJECTORY YOU WANT TO USE
 							! Here parcels move with vertical wind speed (w) and have their new pressures calculated using actual temp
@@ -3637,16 +3937,16 @@ PROGRAM back_traj
 							!is the parcel in the pbl?
                             ! Unlike WRF, ERA5 evap and twp units are consistent, so no need to divde by indatatsteps.   
 							!$OMP CRITICAL (wv_cont1)
-							if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
+							!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
     							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
     								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-    										/ (lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
     							end if
-							else
-    							if (par_q < new_par_q-min_del_q) then
-    							    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
-    							end if
-							end if
+							!else
+    						!	if (par_q < new_par_q-min_del_q) then
+    						!	    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
+    						!	end if
+							!end if
 							!$OMP END CRITICAL (wv_cont1)
 
 #else
@@ -3671,18 +3971,26 @@ PROGRAM back_traj
 
 							par_q = new_par_q
 
+                            !saving parcel stats
+                            if (eachParcel) then
+                                parcel_stats(12,totsteps-daytsteps+tt+1-nn) = evap(x,y,ttdata)
+                                parcel_stats(13,totsteps-daytsteps+tt+1-nn) = tpw(x,y,ttdata)
+                                parcel_stats(14,totsteps-daytsteps+tt+1-nn) = WV_cont(x,y)
+                            end if
+              
+
 							!
 							!if we have accounted for all the precip  then go to next parcel
 							!
-							if (SUM(WV_cont + WV_cont_apbl)>=1.) then
-							!if (SUM(WV_cont)>=1.) then
+							!if (SUM(WV_cont + WV_cont_apbl)>=1.) then
+							if (SUM(WV_cont)>=1.) then
 								!print *,"all precip accounted (torec,wv_cont) ",torec,SUM(WV_cont + WV_cont_apbl)
-								if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
-								!WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont) - 1)
-    								WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
-								else
-    								WV_cont_apbl(x,y) = WV_cont_apbl(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
-								end if
+								!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
+								WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont) - 1)
+    							!	WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
+								!else
+    							!	WV_cont_apbl(x,y) = WV_cont_apbl(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
+								!end if
 								EXIT
 							end if
 
@@ -3701,6 +4009,8 @@ PROGRAM back_traj
 
 							!if we have left the domain then assign the remaining precip to
 							!outside and go to next parcel
+
+       !!! This sction needs modifying if splitting PBL
 							!
 							if (x<2) then
 								WV_cont(1,y) = 1. - SUM(WV_cont)
@@ -3733,12 +4043,21 @@ PROGRAM back_traj
 
 						! wv_cont(x,y) is a 2d grid of E/TPW values. The grid is added to for every nn parcel back-track. E.g. in one 10min daytstep, we might release 1 parcel. This parcel will calculate the contribution from every cell in the grid. However we could release more, like 5 parcels. The contribution from the grid should be the same no matter how many parcels we release. So we take the average grid contribution per parcel released.
 						WV_cont_day = WV_cont_day + WV_cont/npar
-						WV_cont_day_apbl = WV_cont_day_apbl + WV_cont_apbl/npar
+						!WV_cont_day_apbl = WV_cont_day_apbl + WV_cont_apbl/npar
 
 						if (par_lev==0) then
 							write(*,*) "par_lev==0"
 							STOP
 						end if
+
+                        !if keeping track of each parcel
+                        if (eachParcel) then
+                            !print *,"output",threadnum+10
+                            WRITE(threadnum+10) parcel_stats
+                            CLOSE(threadnum+10)
+                        end if
+
+                        !print *, 'parcel_stats(:,:10)', parcel_stats(:,:2)
 
 					end do  !mm loop
 
@@ -3750,8 +4069,8 @@ PROGRAM back_traj
 				!$OMP CRITICAL (output)
 				status = nf90_put_var(outncid,wvcid,WV_cont_day,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
 				if(status /= nf90_NoErr) call handle_err(status)
-				status = nf90_put_var(outncid,wvc2id,WV_cont_day_apbl,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
-				if(status /= nf90_NoErr) call handle_err(status)
+				!status = nf90_put_var(outncid,wvc2id,WV_cont_day_apbl,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
+				!if(status /= nf90_NoErr) call handle_err(status)
 				status = nf90_put_var(outncid,xlocid,xx,start=(/torec/))
 				if(status /= nf90_NoErr) call handle_err(status)
 				status = nf90_put_var(outncid,ylocid,yy,start=(/torec/))
