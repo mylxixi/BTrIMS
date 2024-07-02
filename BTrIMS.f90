@@ -3209,10 +3209,10 @@ print *, 'dim_k_start,dim_k_end,ptop',dim_k_start,dim_k_end,ptop
 
 		if (totbtadays>1) then
 
-			call get_era5_field(day, mon, year, "clwc",  clw(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
-			call get_era5_field(day, mon, year, "crwc",  rnw(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
-			call get_era5_field(day, mon, year, "cswc", snow(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
-			call get_era5_field(day, mon, year, "ciwc",  ice(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year, "clwc",  clw(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year, "crwc",  rnw(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year, "cswc", snow(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year, "ciwc",  ice(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
 
 			jd_today = julian(year,mon,day)
 
@@ -3283,18 +3283,18 @@ print *, 'dim_k_start,dim_k_end,ptop',dim_k_start,dim_k_end,ptop
 
 		if (totbtadays>1) then
 
-			call get_era5_field(day, mon, year, "RAIN", precip, starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+			call get_era5_field(day, mon, year, "RAIN", precip, starts=(/dim_j_start, dim_i_start, (day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
 
-			call get_era5_field(day, mon, year,  "LH",   evap(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
-			call get_era5_field(day, mon, year,"Psfc",   psfc(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
-			call get_era5_field(day, mon, year,"PBLH",pbl_hgt(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
-			call get_era5_field(day, mon, year, "tcw",    tcw(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+			call get_era5_field(day, mon, year,  "LH",   evap(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+			call get_era5_field(day, mon, year,"Psfc",   psfc(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+			call get_era5_field(day, mon, year,"PBLH",pbl_hgt(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
+			call get_era5_field(day, mon, year, "tcw",    tcw(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start, (day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,datadaysteps/))
 
-			call get_era5_field(day, mon, year,"q",q(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
-			call get_era5_field(day, mon, year,"u",u(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
-			call get_era5_field(day, mon, year,"v",v(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
-			call get_era5_field(day, mon, year,"w",w(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
-			call get_era5_field(day, mon, year,"T",t(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(sday-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"q",q(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"u",u(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"v",v(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"w",w(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
+			call get_era5_field(day, mon, year,"T",t(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), starts=(/dim_j_start, dim_i_start,dim_k_start,(day-1)*datadaysteps+1/), counts=(/dim_j,dim_i,dim_k,datadaysteps/))
 
 			! Get julian day of current day
 			jd_today = julian(year,mon,day)
