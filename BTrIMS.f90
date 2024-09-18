@@ -3428,7 +3428,7 @@ PROGRAM back_traj
 	INTEGER,ALLOCATABLE,DIMENSION(:) :: par_release
 	INTEGER :: xx,yy,tt,nn,mm,npar,orec,x,y,ttdata,nnMM5,ttdataday
 	INTEGER :: xx_omp,threadnum,torec
-	REAL :: ttfac,nnfac,precip_here,qfac
+	REAL :: ttfac,nnfac,precip_here,qfac,wv_fac
 
 	INTEGER,ALLOCATABLE,DIMENSION(:,:) :: wsmask
 
@@ -3762,6 +3762,7 @@ end if
 						WV_cont = 0.
 						!WV_cont_apbl = 0.
 						qfac = 1.
+						wv_fac = 1.
 						x = xx
 						y = yy
 
@@ -3896,9 +3897,9 @@ end if
 							pres_then(:,:,:) = lin_interp3D(pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
 							!$OMP END CRITICAl (presthen2)
 
-                                                        !$OMP CRITICAl (psfcthen)
-                                                        psfc_then(:,:) = lin_interp2D(surf_pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,nnMM5:nnMM5+1),nnfac)
-                                                        !$OMP END CRITICAl (psfcthen)
+							!$OMP CRITICAl (psfcthen)
+							psfc_then(:,:) = lin_interp2D(surf_pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,nnMM5:nnMM5+1),nnfac)
+							!$OMP END CRITICAl (psfcthen)
 
 
 							! SPECIFY WHICH VERSION OF THE BACK-TRAJECTORY YOU WANT TO USE
@@ -3940,7 +3941,9 @@ end if
 							!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
     							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
     								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) * wv_fac
+									wv_fac = qfac * (1-(lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+									/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) )
     							end if
 							!else
     						!	if (par_q < new_par_q-min_del_q) then
