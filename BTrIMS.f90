@@ -80,13 +80,13 @@ INTEGER, PARAMETER :: totbtadays = 15   !number of days of data to keep for bta;
                                        !must be less than days you have input data for
 INTEGER, PARAMETER :: tstep = 15   !number of minutes for back trajectory time step (simultion time step)
                       !must divide evenly into number of minutes in day 1440 and number of minutes in MM5 time step (here 180)
-INTEGER, PARAMETER :: nparcels = 10   !set the number of parcels to release if it rains
+INTEGER, PARAMETER :: nparcels = 20   !set the number of parcels to release if it rains
 REAL, PARAMETER :: minpre = 1   !min daily precip to deal with (mm)
 
 INTEGER, PARAMETER :: bdy = 6   !boundary layers to ignore; trajectories will be tracked to this boundary
 
 CHARACTER(LEN=50), PARAMETER :: diri = "/g/data/hh5/tmp/w28/jpe561/back_traj/" 
-CHARACTER(LEN=50), PARAMETER :: diri_era5 = "/g/data/w28/jpe561/BTrIMS/"
+CHARACTER(LEN=60), PARAMETER :: diri_era5 = "/scratch/w40/ym7079/"  !len=50  to len=60
 ! CHARACTER(LEN=50), PARAMETER :: diri = "/srv/ccrc/data03/z3131380/PartB/Masks/"
 ! CHARACTER(LEN=100), PARAMETER :: diro = "/g/data/xc0/user/Holgate/QIBT/exp02/"
 CHARACTER(LEN=100) :: diro  
@@ -96,14 +96,14 @@ CHARACTER(LEN=100), PARAMETER :: dirdata_land = "/g/data/hh5/tmp/w28/jpe561/back
 ! CHARACTER(LEN=100), PARAMETER :: dirdata_atm = "/srv/ccrc/data33/z3481416/CCRC-WRF3.6.0.5-SEB/ERA-Interim/R2_nudging/out/"
 ! CHARACTER(LEN=100), PARAMETER :: dirdata_land = "/srv/ccrc/data03/z3131380/PartB/NARCliM_postprocess/" 
 
-INTEGER, PARAMETER :: numthreads = 48   !set the number of parallel openmp threads
+INTEGER, PARAMETER :: numthreads = 104   !set the number of parallel openmp threads
 
 LOGICAL, PARAMETER :: peak = .FALSE.	!does the daylist indicate storm peaks (TRUE) or whole days (FALSE)
 
 LOGICAL, PARAMETER :: wshed = .TRUE. !only calculate trajectories for watershed
 
 CHARACTER(LEN=50), PARAMETER :: fwshed = "NARCliM_AUS_land_sea_mask.nc"
-CHARACTER(LEN=50), PARAMETER :: fwshed_era5 = "Pakistan_mask_int_to180.nc"
+CHARACTER(LEN=50), PARAMETER :: fwshed_era5 = "Scotlan_mask_int2.nc"
                                 !set to "" if no watershed
                                 !0 outside watershed, >0 inside
 
@@ -1526,6 +1526,11 @@ MODULE bt_subs
 		!calculate new lon
 		!
 		lon = lon + u*tstep*60/(cos(lat*pi/180)*deg_dist*1000)
+		if (lon>360) then
+			lon = lon-360
+		else if (lon<0) then
+			lon = lon -360
+		end if
 
 
 	END SUBROUTINE advect
@@ -3422,13 +3427,13 @@ PROGRAM back_traj
 	REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: unow,vnow,wnow
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: pres_then,tempnow
 	!REAL,ALLOCATABLE,DIMENSION(:,:,:) :: pot_temp_then !
-	REAL,ALLOCATABLE,DIMENSION(:,:) :: psfc_then
-        INTEGER,ALLOCATABLE,DIMENSION(:,:,:) :: pbl_lev
+	REAL,ALLOCATABLE,DIMENSION(:,:) :: psfc_then,evapnow
+    INTEGER,ALLOCATABLE,DIMENSION(:,:,:) :: pbl_lev
 
 	INTEGER,ALLOCATABLE,DIMENSION(:) :: par_release
 	INTEGER :: xx,yy,tt,nn,mm,npar,orec,x,y,ttdata,nnMM5,ttdataday
 	INTEGER :: xx_omp,threadnum,torec
-	REAL :: ttfac,nnfac,precip_here,qfac,wv_fac
+	REAL :: ttfac,nnfac,precip_here,qfac_evap,qfac_pbl,grid_ratio
 
 	INTEGER,ALLOCATABLE,DIMENSION(:,:) :: wsmask
 
@@ -3486,12 +3491,12 @@ PROGRAM back_traj
         !Australia Case 
 	!call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -50.5, 0.5, 89.75, -130.0, 100.0, 1000.0 /) )
         !Pakistan case
-        call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -40., 60., 20., -150., 100.,1000. /) )
+    call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -5., 85., -150., 120., 1.,1000. /))
         !Scotland case
         !call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ 20., 85., -180., 120., 100., 1000. /) )
 	!--------------------------------------------------------
 
-     print *,"dim_j, dim_i, dim_k",dim_j,dim_i, dim_k
+    print *,"dim_j, dim_i, dim_k",dim_j,dim_i, dim_k
      !print *, 'lat2d(1,:)',lat2d(1,:)
      !print *, 'lon2d(:,1)',lon2d(:,1)
 
@@ -3517,35 +3522,8 @@ PROGRAM back_traj
     print *,'total no. of back-track simulation timesteps to remember (totsteps): ',totsteps
     print *,'total no. of back-track input file time intervals (datatotsteps): ',datatotsteps
     print *, 'datansteps', datansteps
-
-
-	! Allocate the variable arrays
-	ALLOCATE( precip(dim_j,dim_i,datadaysteps), &
-	          evap(dim_j,dim_i,datatotsteps),   &
-						 tpw(dim_j,dim_i,datatotsteps),   &
-		   surf_pres(dim_j,dim_i,datatotsteps),   &
-			   pbl_hgt(dim_j,dim_i,datatotsteps),   &
-			   pbl_lev(dim_j,dim_i,datatotsteps),   &
-            psfc(dim_j,dim_i,datatotsteps),   &
-						 tcw(dim_j,dim_i,datatotsteps),   &
-
-						   u(dim_j,dim_i,dim_k,datatotsteps), &
-	             v(dim_j,dim_i,dim_k,datatotsteps), &
-							 w(dim_j,dim_i,dim_k,datatotsteps), &
-						temp(dim_j,dim_i,dim_k,datatotsteps), &
-	      act_temp(dim_j,dim_i,dim_k,datatotsteps), &
-	! pot_temp(dim_j,dim_i,dim_k,datatotsteps), &
-	           mix(dim_j,dim_i,dim_k,datatotsteps), &
-						  pp(dim_j,dim_i,dim_k,datatotsteps), &
-							pb(dim_j,dim_i,dim_k,datatotsteps), &
-	        mixtot(dim_j,dim_i,dim_k,datatotsteps), &
-					     pw(dim_j,dim_i,dim_k,daytsteps+1), &
-	        mixcld(dim_j,dim_i,dim_k,datatotsteps), &
-					  pres(dim_j,dim_i,dim_k,datatotsteps), &
-	                                    STAT = status )
-
 	!
-	! Read in watershed mask if required
+	! Read in watershed mask
 	!
 	if (wshed) then
 		call get_watershed(wsmask)
@@ -3557,11 +3535,38 @@ PROGRAM back_traj
 	! Set the number of threads to use in the parallel sections
 	call OMP_SET_NUM_THREADS(numthreads)
 
+				! Allocate the variable arrays
+	ALLOCATE( precip(dim_j,dim_i,datadaysteps), &
+		evap(dim_j,dim_i,datatotsteps),   &
+		tpw(dim_j,dim_i,datatotsteps),   &
+		surf_pres(dim_j,dim_i,datatotsteps),   &
+		pbl_hgt(dim_j,dim_i,datatotsteps),   &
+		pbl_lev(dim_j,dim_i,datatotsteps),   &
+		psfc(dim_j,dim_i,datatotsteps),   &
+		tcw(dim_j,dim_i,datatotsteps),   &
+		u(dim_j,dim_i,dim_k,datatotsteps), &
+		v(dim_j,dim_i,dim_k,datatotsteps), &
+		w(dim_j,dim_i,dim_k,datatotsteps), &
+		temp(dim_j,dim_i,dim_k,datatotsteps), &
+		act_temp(dim_j,dim_i,dim_k,datatotsteps), &
+		! pot_temp(dim_j,dim_i,dim_k,datatotsteps), &
+		mix(dim_j,dim_i,dim_k,datatotsteps), &
+		pp(dim_j,dim_i,dim_k,datatotsteps), &
+		pb(dim_j,dim_i,dim_k,datatotsteps), &
+		mixtot(dim_j,dim_i,dim_k,datatotsteps), &
+		pw(dim_j,dim_i,dim_k,daytsteps+1), &
+		mixcld(dim_j,dim_i,dim_k,datatotsteps), &
+		pres(dim_j,dim_i,dim_k,datatotsteps), &
+		STAT = status )
+
 	!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 	! FOR EVERY DAY OF THE SIMULATION PERIOD
 	!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+
 	do dd = 1, totdays
+
+
 		orec = 0
 
 		!Get date to open correct input file
@@ -3734,13 +3739,18 @@ end if
 				par_release = 0
 
 				!$OMP CRITICAL (par_rel_time)
-				if (COUNT(MASK = precip(xx,yy,:)>0.)<(nparcels/indatatsteps)) then
-					npar = COUNT(MASK = precip(xx,yy,:)>0.) * indatatsteps
-					call parcel_release_time(precip(xx,yy,:),npar,par_release)
-				else
-					npar = nparcels
-					call parcel_release_time(precip(xx,yy,:),npar,par_release)
-				end if
+				! if (COUNT(MASK = precip(xx,yy,:)>0.)<(nparcels/indatatsteps)) then
+				! 	npar = COUNT(MASK = precip(xx,yy,:)>0.) * indatatsteps
+				! 	call parcel_release_time(precip(xx,yy,:),npar,par_release)
+				! else
+				! 	npar = nparcels
+				! 	call parcel_release_time(precip(xx,yy,:),npar,par_release)
+				! end if
+				!npar = 10*COUNT(MASK = precip(xx,yy,:)>0.)
+				npar = nparcels
+				print*,'npar',npar
+				call parcel_release_time(precip(xx,yy,:),npar,par_release)
+
 				!$OMP END CRITICAL (par_rel_time)
 	
 
@@ -3761,8 +3771,8 @@ end if
 
 						WV_cont = 0.
 						!WV_cont_apbl = 0.
-						qfac = 1.
-						wv_fac = 1.
+						qfac_evap = 1.
+						!qfac_pbl =1
 						x = xx
 						y = yy
 
@@ -3782,7 +3792,7 @@ end if
 						!determine model level from which to release parcel
 						!$OMP CRITICAL (par_rel_height)
 						call parcel_release_height(pw(xx,yy,:,tt),par_lev)
-						print *,'psfc ',surf_pres(xx,yy,tt)
+						!print *,'psfc ',surf_pres(xx,yy,tt)
                                                 !par_lev = 35 ! this is 950hPa when loading all ERA5 model levels
 						!$OMP END CRITICAL (par_rel_height)
 
@@ -3924,11 +3934,8 @@ end if
 							!so long as it isn't the first time step.
 							! i.e. If the amount of water in the atmosphere at the parcel position decreases backward in time, then the parcel q at the current time step must not have come from the cell evap...maybe from some other process like convection.
 							!
-							if (nn < totsteps-daytsteps+tt) then
-								if (new_par_q+min_del_q < par_q) then
-									qfac = MAX(qfac*(1-(par_q-new_par_q)/par_q),0.)
-								end if
-							end if
+							grid_ratio = cos(lat2d(x,y)*pi/180)/cos(lat2d(xx,yy)*pi/180)
+
 
 #if defined ERA5
 
@@ -3940,16 +3947,28 @@ end if
 							!$OMP CRITICAL (wv_cont1)
 							!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
     							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
-    								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) * wv_fac
-									wv_fac = qfac * (1-(lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-									/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) )
+    								WV_cont(x,y) = WV_cont(x,y) + grid_ratio * (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) * qfac_evap
+									print*, 'e/tpw,grid_ratio,qfac_evap,WV_cont(x,y)',lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+									/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)),grid_ratio,qfac_evap,WV_cont(x,y)
+									if (nn < totsteps-daytsteps+tt) then
+										qfac_evap = qfac_evap*(1-grid_ratio * lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac)/(indatatsteps * lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+									end if
     							end if
-							!else
-    						!	if (par_q < new_par_q-min_del_q) then
-    						!	    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
-    						!	end if
-							!end if
+							! else
+    						! 	if (par_q < new_par_q-min_del_q) then
+    						! 	    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
+    						! 	end if
+							! end if
+							
+							!update of qfac should be after the qfac for former time step is used.
+
+
+							! if (nn < totsteps-daytsteps+tt) then
+							! 	if (new_par_q+min_del_q < par_q) then
+							! 		qfac = MAX(qfac*(1-(par_q-new_par_q)/par_q),0.)
+							! 	end if
+							! end if
 							!$OMP END CRITICAL (wv_cont1)
 
 #else
@@ -3961,7 +3980,7 @@ end if
 							if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
     							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
     								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))*qfac_evap
     							end if
 							else
     							if (par_q < new_par_q-min_del_q) then
@@ -4006,9 +4025,12 @@ end if
 							!the water not accounted for must have come from convection
 							!or some other process that remains unaccounted for
 							!
-							if (qfac==0) then
-								EXIT
-							end if
+							! if (qfac==0) then
+							! 	EXIT
+							! end if
+					! if (qfac_evap<=0.00001) then
+					! 	EXIT
+					! end if
 
 							!if we have left the domain then assign the remaining precip to
 							!outside and go to next parcel
