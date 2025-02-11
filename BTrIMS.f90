@@ -539,18 +539,18 @@ MODULE bt_subs
 
 !***********************************************************************
 
-	SUBROUTINE new_out_file(outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,daynum,lat2d,lon2d)
-	!----------------------------------------------
-	!create the output netcdf file and prepare it to accept data
-	!--------------------------------------------------------
-
+	SUBROUTINE new_out_file(outncid,wvcid,wvc2id,wvcid_adjust,xlocid,ylocid,dayid,opreid,daynum,lat2d,lon2d)
+		!----------------------------------------------
+		!create the output netcdf file and prepare it to accept data
+		!--------------------------------------------------------
+	
 		USE global_data
 		USE util
 		USE netcdf
 
 		IMPLICIT NONE
 
-		INTEGER, INTENT(INOUT) :: outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid
+		INTEGER, INTENT(INOUT) :: outncid,wvcid,wvc2id,wvcid_adjust,xlocid,ylocid,dayid,opreid
 		!REAL, INTENT(IN) :: daynum
 		INTEGER, INTENT(IN) :: daynum
 		REAL,INTENT(IN),DIMENSION(:,:) :: lat2d,lon2d
@@ -583,7 +583,7 @@ MODULE bt_subs
 				if (status /= NF90_NOERR) call handle_err(status)
 			else
 				status = nf90_create(TRIM(diro)//"bt."//TRIM(int_to_string(year)) &
-		  			//TRIM(int_to_string(mon))//"_"//TRIM(int_to_string(INT(daynum)))// &
+						//TRIM(int_to_string(mon))//"_"//TRIM(int_to_string(INT(daynum)))// &
 					".nc",nf90_clobber,outncid)
 				if (status /= NF90_NOERR) call handle_err(status)
 			end if
@@ -608,8 +608,10 @@ MODULE bt_subs
 		!
 		status = nf90_def_var(outncid,"wv_cont",nf90_float,(/jdimid,idimid,gwvcdimid/),wvcid)
 		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_def_var(outncid,"wv_cont_adjust",nf90_float,(/jdimid,idimid,gwvcdimid/),wvcid_adjust)
+		if (status /= NF90_NOERR) call handle_err(status)
 		!turning off apbl output
-                !status = nf90_def_var(outncid,"wv_cont_apbl",nf90_float,(/jdimid,idimid,gwvcdimid/),wvc2id)
+		!status = nf90_def_var(outncid,"wv_cont_apbl",nf90_float,(/jdimid,idimid,gwvcdimid/),wvc2id)
 		!if (status /= NF90_NOERR) call handle_err(status)
 		status = nf90_def_var(outncid,"x_loc",nf90_int,(/gwvcdimid/),xlocid)
 		if (status /= NF90_NOERR) call handle_err(status)
@@ -637,8 +639,17 @@ MODULE bt_subs
 		status = nf90_put_att(outncid,wvcid,"parcels_per_grid_point",nparcels)
 		if (status /= NF90_NOERR) call handle_err(status)
 
+		status = nf90_put_att(outncid,wvcid_adjust,"long_name","Water Vapor Contribution")
+		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_put_att(outncid,wvcid_adjust,"units","proportion of precipitation")
+		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_put_att(outncid,wvcid_adjust,"num_boundary_layers",bdy)
+		if (status /= NF90_NOERR) call handle_err(status)
+		status = nf90_put_att(outncid,wvcid_adjust,"parcels_per_grid_point",nparcels)
+		if (status /= NF90_NOERR) call handle_err(status)
+
 		!turn off apbl output
-                !status = nf90_put_att(outncid,wvc2id,"long_name","Water Vapor Contribution above PBL")
+				!status = nf90_put_att(outncid,wvc2id,"long_name","Water Vapor Contribution above PBL")
 		!if (status /= NF90_NOERR) call handle_err(status)
 		!status = nf90_put_att(outncid,wvc2id,"units","proportion of precipitation")
 		!if (status /= NF90_NOERR) call handle_err(status)
@@ -679,14 +690,11 @@ MODULE bt_subs
 		if(status /= nf90_NoErr) call handle_err(status)
 		status = nf90_put_var(outncid,lonid,lon2d,start=(/1,1/),count=(/dim_j,dim_i/))
 		if(status /= nf90_NoErr) call handle_err(status)
-
+	
 	END SUBROUTINE new_out_file
 
 	!***********************************************************************
-
-    
-
-     
+  
 
 	!***********************************************************************  
 
@@ -3405,7 +3413,7 @@ PROGRAM back_traj
 	!netcdf id variables
 	!
 	INTEGER :: status
-	INTEGER :: outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid
+	INTEGER :: outncid,wvcid,wvc2id,wvcid_adjust,xlocid,ylocid,dayid,opreid
 	!
 	!data variables
 	!
@@ -3413,8 +3421,8 @@ PROGRAM back_traj
 	REAL :: ptop,delx,par_lat,par_lon,par_pres,par_q,new_par_q,end_precip
 	INTEGER :: datatstep
 	REAL,ALLOCATABLE,DIMENSION(:,:) :: lat2d,lon2d
-	REAL,ALLOCATABLE,DIMENSION(:,:) :: terrain,WV_cont,WV_cont_day
-	REAL,ALLOCATABLE,DIMENSION(:,:) :: WV_cont_apbl,WV_cont_day_apbl
+	REAL,ALLOCATABLE,DIMENSION(:,:) :: terrain,WV_cont,WV_cont_adjust,WV_cont_day,WV_cont_day_adjust
+	REAL,ALLOCATABLE,DIMENSION(:,:) :: WV_cont_apbl,WV_cont_apbl_adjust,WV_cont_day_apbl,WV_cont_day_apbl_adjust
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: precip
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: evap,tpw,pbl_hgt,surf_pres,pstar,psfc,tcw
 	REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: u,v,w,temp,act_temp,mix,pp,pb,pw,mixcld,mixtot,pres
@@ -3428,7 +3436,7 @@ PROGRAM back_traj
 	INTEGER,ALLOCATABLE,DIMENSION(:) :: par_release
 	INTEGER :: xx,yy,tt,nn,mm,npar,orec,x,y,ttdata,nnMM5,ttdataday
 	INTEGER :: xx_omp,threadnum,torec
-	REAL :: ttfac,nnfac,precip_here,qfac,wv_fac
+	REAL :: ttfac,nnfac,precip_here,qfac,wv_fac,grid_ratio
 
 	INTEGER,ALLOCATABLE,DIMENSION(:,:) :: wsmask
 
@@ -3518,31 +3526,29 @@ PROGRAM back_traj
     print *,'total no. of back-track input file time intervals (datatotsteps): ',datatotsteps
     print *, 'datansteps', datansteps
 
-
 	! Allocate the variable arrays
 	ALLOCATE( precip(dim_j,dim_i,datadaysteps), &
-	          evap(dim_j,dim_i,datatotsteps),   &
-						 tpw(dim_j,dim_i,datatotsteps),   &
-		   surf_pres(dim_j,dim_i,datatotsteps),   &
-			   pbl_hgt(dim_j,dim_i,datatotsteps),   &
-			   pbl_lev(dim_j,dim_i,datatotsteps),   &
-            psfc(dim_j,dim_i,datatotsteps),   &
-						 tcw(dim_j,dim_i,datatotsteps),   &
-
-						   u(dim_j,dim_i,dim_k,datatotsteps), &
-	             v(dim_j,dim_i,dim_k,datatotsteps), &
-							 w(dim_j,dim_i,dim_k,datatotsteps), &
-						temp(dim_j,dim_i,dim_k,datatotsteps), &
-	      act_temp(dim_j,dim_i,dim_k,datatotsteps), &
-	! pot_temp(dim_j,dim_i,dim_k,datatotsteps), &
-	           mix(dim_j,dim_i,dim_k,datatotsteps), &
-						  pp(dim_j,dim_i,dim_k,datatotsteps), &
-							pb(dim_j,dim_i,dim_k,datatotsteps), &
-	        mixtot(dim_j,dim_i,dim_k,datatotsteps), &
-					     pw(dim_j,dim_i,dim_k,daytsteps+1), &
-	        mixcld(dim_j,dim_i,dim_k,datatotsteps), &
-					  pres(dim_j,dim_i,dim_k,datatotsteps), &
-	                                    STAT = status )
+	evap(dim_j,dim_i,datatotsteps),   &
+	tpw(dim_j,dim_i,datatotsteps),   &
+	surf_pres(dim_j,dim_i,datatotsteps),   &
+	pbl_hgt(dim_j,dim_i,datatotsteps),   &
+	pbl_lev(dim_j,dim_i,datatotsteps),   &
+	psfc(dim_j,dim_i,datatotsteps),   &
+	tcw(dim_j,dim_i,datatotsteps),   &
+	u(dim_j,dim_i,dim_k,datatotsteps), &
+	v(dim_j,dim_i,dim_k,datatotsteps), &
+	w(dim_j,dim_i,dim_k,datatotsteps), &
+	temp(dim_j,dim_i,dim_k,datatotsteps), &
+	act_temp(dim_j,dim_i,dim_k,datatotsteps), &
+	!pot_temp(dim_j,dim_i,dim_k,datatotsteps), &
+	mix(dim_j,dim_i,dim_k,datatotsteps), &
+	pp(dim_j,dim_i,dim_k,datatotsteps), &
+	pb(dim_j,dim_i,dim_k,datatotsteps), &
+	mixtot(dim_j,dim_i,dim_k,datatotsteps), &
+	pw(dim_j,dim_i,dim_k,daytsteps+1), &
+	mixcld(dim_j,dim_i,dim_k,datatotsteps), &
+	pres(dim_j,dim_i,dim_k,datatotsteps), &
+	STAT = status )
 
 	!
 	! Read in watershed mask if required
@@ -3569,7 +3575,7 @@ PROGRAM back_traj
 		print *,"day,mon,year",day,mon,year
 
 		! Create output file (will create empty file even if it didn't rain anywhere in the domain on that day)
-		call new_out_file(outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,day,lat2d,lon2d)
+		call new_out_file(outncid,wvcid,wvc2id,wvcid_adjust,xlocid,ylocid,dayid,opreid,day,lat2d,lon2d)
 		print *,'created new out file'
 
 		! Get the variables required for back trajectory calculations for the current day
@@ -3665,9 +3671,9 @@ PROGRAM back_traj
 		!seem to work otherwise!!!????
 
 		print *, 'Starting parallelisation'
-!$OMP PARALLEL DEFAULT(PRIVATE) SHARED(pw,tpw,u,v,w,pres,act_temp,surf_pres,evap,precip,mix,mixtot,pbl_lev,lat2d,lon2d,orec,outncid,wvcid,wvc2id,xlocid,ylocid,dayid,opreid,wsmask,daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts,ssdim)
+!$OMP PARALLEL DEFAULT(PRIVATE) SHARED(pw,tpw,u,v,w,pres,act_temp,surf_pres,evap,precip,mix,mixtot,pbl_lev,lat2d,lon2d,orec,outncid,wvcid,wvc2id,wvcid_adjust,xlocid,ylocid,dayid,opreid,wsmask,daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,sday,smon,syear,mon,year,day,dd,totpts,ssdim)
 		!allocate these arrays for each thread
-		ALLOCATE( WV_cont(dim_j,dim_i),WV_cont_day(dim_j,dim_i), &
+		ALLOCATE( WV_cont(dim_j,dim_i),WV_cont_adjust(dim_j,dim_i),WV_cont_day(dim_j,dim_i),WV_cont_day_adjust(dim_j,dim_i), &
 				WV_cont_apbl(dim_j,dim_i),WV_cont_day_apbl(dim_j,dim_i), &
 				unow(ssdim,ssdim,dim_k,2),vnow(ssdim,ssdim,dim_k,2), &
 				par_release(daytsteps), &
@@ -3717,6 +3723,7 @@ end if
     
 
 				WV_cont_day = 0.
+				WV_cont_day_adjust = 0.
 				!WV_cont_day_apbl = 0.
 
 
@@ -3760,6 +3767,7 @@ end if
 					do mm = 1, par_release(tt)
 
 						WV_cont = 0.
+						WV_cont_adjust = 0.
 						!WV_cont_apbl = 0.
 						qfac = 1.
 						wv_fac = 1.
@@ -3777,7 +3785,6 @@ end if
 
 						!the precip produced here at this parcel time step
 						end_precip = precip(xx,yy,ttdataday)/indatatsteps
-
 
 						!determine model level from which to release parcel
 						!$OMP CRITICAL (par_rel_height)
@@ -3924,11 +3931,9 @@ end if
 							!so long as it isn't the first time step.
 							! i.e. If the amount of water in the atmosphere at the parcel position decreases backward in time, then the parcel q at the current time step must not have come from the cell evap...maybe from some other process like convection.
 							!
-							if (nn < totsteps-daytsteps+tt) then
-								if (new_par_q+min_del_q < par_q) then
-									qfac = MAX(qfac*(1-(par_q-new_par_q)/par_q),0.)
-								end if
-							end if
+							grid_ratio = abs((sin(max(-90.0, lat2d(x,y) - 0.5 * 0.25)*pi/180)-sin(min(90.0,lat2d(x,y)+0.5 * 0.25) * pi/180))/(sin(max(-90.0, lat2d(xx,yy) - 0.5 * 0.25)*pi/180)-sin(min(90.0,lat2d(xx,yy)+0.5 * 0.25) * pi/180)))
+
+
 
 #if defined ERA5
 
@@ -3940,16 +3945,30 @@ end if
 							!$OMP CRITICAL (wv_cont1)
 							!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
     							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
-    								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) * wv_fac
-									wv_fac = qfac * (1-(lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-									/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) )
+									WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+									/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) * wv_fac
+							
+									WV_cont_adjust(x,y) = WV_cont_adjust(x,y) + 1./grid_ratio * (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+									/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))) * wv_fac
+							
+									if (nn < totsteps-daytsteps+tt) then
+										wv_fac = wv_fac*(1-lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac)/(indatatsteps * lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+									end if
+
     							end if
 							!else
     						!	if (par_q < new_par_q-min_del_q) then
     						!	    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
     						!	end if
-							!end if
+							!end if	
+
+							!update of qfac should be after the qfac for former time step is used.
+
+							! if (nn < totsteps-daytsteps+tt) then
+							! 	if (new_par_q+min_del_q < par_q) then
+							! 		qfac = MAX(qfac*(1-(par_q-new_par_q)/par_q),0.)
+							! 	end if
+							! end if
 							!$OMP END CRITICAL (wv_cont1)
 
 #else
@@ -4017,16 +4036,20 @@ end if
 							!
 							if (x<2) then
 								WV_cont(1,y) = 1. - SUM(WV_cont)
+								WV_cont_adjust(1,y) = 1./grid_ratio * (1. - SUM(WV_cont))
 								EXIT
 							else if (x>dim_j-2) then
 								WV_cont(dim_j,y) = 1. - SUM(WV_cont)
+								WV_cont_adjust(dim_j,y) = 1./grid_ratio * (1. - SUM(WV_cont))
 								EXIT
 							end if
 							if (y<2) then
 								WV_cont(x,1) = 1. - SUM(WV_cont)
+								WV_cont_adjust(x,1) = 1./grid_ratio * (1. - SUM(WV_cont))
 								EXIT
 							else if (y>dim_i-2) then
 								WV_cont(x,dim_i) = 1. - SUM(WV_cont)
+								WV_cont_adjust(x,dim_i) = 1./grid_ratio * (1. - SUM(WV_cont))
 								EXIT
 							end if
 
@@ -4046,6 +4069,7 @@ end if
 
 						! wv_cont(x,y) is a 2d grid of E/TPW values. The grid is added to for every nn parcel back-track. E.g. in one 10min daytstep, we might release 1 parcel. This parcel will calculate the contribution from every cell in the grid. However we could release more, like 5 parcels. The contribution from the grid should be the same no matter how many parcels we release. So we take the average grid contribution per parcel released.
 						WV_cont_day = WV_cont_day + WV_cont/npar
+						WV_cont_day_adjust = WV_cont_day_adjust + WV_cont_adjust/npar
 						!WV_cont_day_apbl = WV_cont_day_apbl + WV_cont_apbl/npar
 
 						if (par_lev==0) then
@@ -4071,6 +4095,8 @@ end if
 				!
 				!$OMP CRITICAL (output)
 				status = nf90_put_var(outncid,wvcid,WV_cont_day,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
+				if(status /= nf90_NoErr) call handle_err(status)
+				status = nf90_put_var(outncid,wvcid_adjust,WV_cont_day_adjust,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
 				if(status /= nf90_NoErr) call handle_err(status)
 				!status = nf90_put_var(outncid,wvc2id,WV_cont_day_apbl,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
 				!if(status /= nf90_NoErr) call handle_err(status)
