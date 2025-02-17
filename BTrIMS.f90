@@ -1236,6 +1236,7 @@ MODULE bt_subs
 	!***********************************************************************
 
 	SUBROUTINE near_pt(lon2d,lat2d,lon,lat,x,y)
+	!$acc routine seq
 		!---------------------------------------------------------
 		!calculate the grid point nearest the lat and lon location
 		!------------------------------------------------------
@@ -1286,6 +1287,7 @@ MODULE bt_subs
 	!***********************************************************************
 
 	SUBROUTINE bilin_interp(var2d,lon2d,lat2d,x,y,par_lon,par_lat,var)
+	!$acc routine seq
 	!------------------------------------------------------------------
 	! find the bi-linearly interpolated value at par_lon,par_lat
 	! lon and lat are not regularly spaced grids
@@ -1393,6 +1395,7 @@ MODULE bt_subs
 	!***********************************************************************
 
 	SUBROUTINE new_parcel_level_w(par_pres,pres,w,mix,lev,psfc)  ! this has been changed
+	!$acc routine seq
 		!-------------------------------------------------------------------------
 		!calculate the new parcel level given w at this location
 		!--------------------------------------------------------------------------
@@ -1538,6 +1541,7 @@ MODULE bt_subs
 	!***********************************************************************
 
 	SUBROUTINE advect(u,v,lon,lat)
+	!$acc routine seq
 	!-----------------------------------------------
 	!linear advection in direction given by u and v
 	!u and v are m/s
@@ -1773,6 +1777,7 @@ MODULE bt_subs
 	SUBROUTINE implicit_back_traj_w(u,v,w,temp,pres,psfc,lon2d,lat2d, &
 					par_lon,par_lat,par_lev, &
 					par_pres,par_q)
+	!$acc routine seq
 	!-------------------------------------------------------------------------------
 	! Using Merrill's fully implicit  technique
 	! calculate the parcels position one time step before
@@ -3841,7 +3846,7 @@ PROGRAM back_traj
     							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
     								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
     										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))*qfac_evap
-									print*,'WV_cont(x,y)',WV_cont(x,y)
+									!print*,'WV_cont(x,y)',WV_cont(x,y)
 									if (nn < totsteps-daytsteps+tt) then										
 										qfac_evap = qfac_evap*(1-lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac)/(indatatsteps * lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
 									end if
