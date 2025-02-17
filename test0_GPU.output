@@ -1,0 +1,15 @@
+
+======================================================================================
+                  Resource Usage on 2025-02-17 16:51:23:
+   Job Id:             135458589.gadi-pbs
+   Project:            n81
+   Exit Status:        0
+   Service Units:      37.36
+   NCPUs Requested:    16                     NCPUs Used: 16              
+                                           CPU Time Used: 00:28:55        
+   Memory Requested:   100.0GB               Memory Used: 100.0GB         
+   NGPUs Requested:    1                 GPU Utilisation: 0%              
+                                         GPU Memory Used: 0B              
+   Walltime requested: 01:00:00            Walltime Used: 00:31:08        
+   JobFS requested:    200.0MB                JobFS used: 2.0B            
+======================================================================================

@@ -1,0 +1,147 @@
+Warning: support for the NVIDIA HPC SDK is still in a beta stage, and many
+packages in /apps do not support bindings for the NVIDIA fortran compiler.
+Support for more packages is being added over time, but is not yet complete
+To disable this warning, set the NCI_NVIDIA_HPC_SDK_NO_WARN environment
+variable before loading the module.
+nvfortran-Warning-CUDA Fortran or OpenACC GPU targets disables -Mbounds
+lin_interp:
+    695, Generating acc routine seq
+         Generating NVIDIA GPU code
+lin_interp2d:
+    714, Generating acc routine seq
+         Generating NVIDIA GPU code
+lin_interp3d:
+    734, Generating acc routine seq
+         Generating NVIDIA GPU code
+parcel_release_time:
+    754, Generating acc routine seq
+         Generating NVIDIA GPU code
+parcel_release_height:
+    806, Generating acc routine seq
+         Generating NVIDIA GPU code
+lin_interp_inmm5tsteps:
+    843, Generating acc routine seq
+         Generating NVIDIA GPU code
+near_pt:
+   1238, Generating acc routine seq
+         Generating NVIDIA GPU code
+bilin_interp:
+   1289, Generating acc routine seq
+         Generating NVIDIA GPU code
+new_parcel_level_w:
+   1397, Generating acc routine seq
+         Generating NVIDIA GPU code
+advect:
+   1543, Generating acc routine seq
+         Generating NVIDIA GPU code
+implicit_back_traj_w:
+   1777, Generating acc routine seq
+         Generating NVIDIA GPU code
+back_traj:
+   3704, Generating copyout(wv_cont_all(:,:,:)) [if not already present]
+         Generating create(wv_cont(:,:)) [if not already present]
+         Generating copyout(xx_all(:)) [if not already present]
+         Generating create(xx) [if not already present]
+         Generating copyout(yy_all(:)) [if not already present]
+         Generating create(yy) [if not already present]
+         Generating copyout(pre_all(:)) [if not already present]
+         Generating create(par_release(:),psfc_then(:,:),ssy,ttfac,unow(:,:,:,:),vnow(:,:,:,:)) [if not already present]
+         Generating copyin(precip(:,:,:)) [if not already present]
+         Generating create(pres_then(:,:,:)) [if not already present]
+         Generating copyin(dd,lon2d(:,:),evap(:,:,:),lat2d(:,:)) [if not already present]
+         Generating create(wnow(:,:,:,:),nnmm5) [if not already present]
+         Generating copyin(randnums_h(:,:,:)) [if not already present]
+         Generating create(qfac_evap) [if not already present]
+         Generating copyin(wsmask(:,:)) [if not already present]
+         Generating create(x,y,ttdata,tt,ttdataday) [if not already present]
+         Generating copyin(u(:,:,:,:),v(:,:,:,:),w(:,:,:,:),pres(:,:,:,:),psfc(:,:,:),randnums_t(:,:)) [if not already present]
+         Generating create(ssx,nnfac,nn,par_lev) [if not already present]
+         Generating copyin(orec) [if not already present]
+         Generating create(par_lat,par_lon,par_pres,mm) [if not already present]
+         Generating copyin(pw(:,:,:,:)) [if not already present]
+         Generating create(wv_cont_day(:,:),xx_omp) [if not already present]
+         Generating copyin(tpw(:,:,:),mixtot(:,:,:,:)) [if not already present]
+         Generating create(new_par_q,par_q) [if not already present]
+   3710, Generating implicit copy(tempnow(:,:,:),surf_pres(:,:,:),act_temp(:,:,:,:)) [if not already present]
+   3711, Complex loop carried dependence of lat2d,tmp$r$sd1565,tmp$r prevents parallelization
+         Loop carried dependence due to exposed use of tempnow(:,:,:) prevents parallelization
+         Complex loop carried dependence of tmp$r1417$sd1566 prevents parallelization
+         Loop carried scalar dependence for tmp$r1417 at line 3734
+         Loop carried scalar dependence for tmp$r at line 3734
+         Loop carried dependence due to exposed use of wv_cont_day(:,:),wv_cont(:,:),tmp$r$sd1565(:),tmp$r(:),tmp$r1417$sd1566(:),lat2d(:,:),wnow(:,:,:,:) prevents parallelization
+         Complex loop carried dependence of tmp$r1417 prevents parallelization
+         Loop carried dependence due to exposed use of lon2d(:,:),tmp$r1417(:),unow(:,:,:,:),vnow(:,:,:,:),psfc_then(:,:),pres(:,:,:,:),pres_then(:,:,:) prevents parallelization
+         Complex loop carried dependence of lon2d,wv_cont_day prevents parallelization
+         Accelerator serial kernel generated
+         Generating NVIDIA GPU code
+   3716, Loop is parallelizable
+   3724, Loop is parallelizable
+   3726, Loop is parallelizable
+   3734, Loop is parallelizable
+   3742, Scalar last value needed after loop for tmp$r1417 at line 3734
+   3752, Scalar last value needed after loop for tmp$r1417 at line 3734
+   3754, Loop is parallelizable
+   3775, Reference argument passing prevents parallelization: par_lev
+         Loop is parallelizable
+   3782, Reference argument passing prevents parallelization: ttfac
+         Loop is parallelizable
+   3785, Reference argument passing prevents parallelization: ttfac
+         Loop is parallelizable
+   3792, Loop carried dependence due to exposed use of tmp$r1417(:),unow(:,:,:,:),wnow(:,:,:,:),vnow(:,:,:,:),psfc_then(:,:),pres_then(:,:,:) prevents parallelization
+         Complex loop carried dependence of tmp$r1417$sd1566,tmp$r$sd1565 prevents parallelization
+         Loop carried dependence due to exposed use of tmp$r(:),tempnow(:,:,:) prevents parallelization
+   3810, Reference argument passing prevents parallelization: nnfac
+   3812, Reference argument passing prevents parallelization: nnfac
+   3814, Reference argument passing prevents parallelization: nnfac
+   3817, Reference argument passing prevents parallelization: nnfac
+   3823, Reference argument passing prevents parallelization: nnfac
+   3825, Reference argument passing prevents parallelization: nnfac
+   3827, Reference argument passing prevents parallelization: nnfac
+   3830, Reference argument passing prevents parallelization: nnfac
+   3832, Reference argument passing prevents parallelization: nnfac
+   3834, Reference argument passing prevents parallelization: par_q
+         Reference argument passing prevents parallelization: par_pres
+         Reference argument passing prevents parallelization: par_lon
+         Reference argument passing prevents parallelization: par_lat
+         Reference argument passing prevents parallelization: par_lev
+   3839, Reference argument passing prevents parallelization: y
+         Reference argument passing prevents parallelization: x
+         Reference argument passing prevents parallelization: par_lon
+         Reference argument passing prevents parallelization: par_lat
+   3842, Reference argument passing prevents parallelization: nnfac
+   3846, Reference argument passing prevents parallelization: nnfac
+   3847, Reference argument passing prevents parallelization: nnfac
+   3851, Reference argument passing prevents parallelization: nnfac
+   3860, Loop is parallelizable
+   3865, Loop is parallelizable
+   3868, Loop is parallelizable
+   3872, Loop is parallelizable
+   3875, Loop is parallelizable
+   3889, Loop is parallelizable
+   3890, Loop is parallelizable
+   3902, Loop is parallelizable
+   3905, Loop is parallelizable
+
+Accelerator Kernel Timing data
+/scratch/w40/ym7079/GPU_test_new/GPU_repo/BTrIMS/BTrIMS.f90
+  back_traj  NVIDIA  devicenum=0
+    time(us): 51,935,672
+    3704: data region reached 2 times
+        3704: data copyin transfers: 46
+             device time(us): total=870,275 max=151,283 min=5 avg=18,919
+        3909: data copyout transfers: 4
+             device time(us): total=34,522,268 max=34,522,080 min=62 avg=8,630,567
+    3710: compute region reached 1 time
+        3710: data copyin transfers: 1
+             device time(us): total=5 max=5 min=5 avg=5
+        3711: kernel launched 2 times
+            grid: [1]  block: [1-128]
+             device time(us): total=16,226,884 max=16,226,880 min=4 avg=8,113,442
+            elapsed time(us): total=16,235,756 max=16,235,099 min=657 avg=8,117,878
+        3711: data copyout transfers: 1
+             device time(us): total=40 max=40 min=40 avg=40
+    3710: data region reached 2 times
+        3710: data copyin transfers: 29
+             device time(us): total=157,059 max=152,767 min=5 avg=5,415
+        3908: data copyout transfers: 28
+             device time(us): total=159,141 max=153,934 min=11 avg=5,683
