@@ -3804,8 +3804,8 @@ PROGRAM back_traj
 							end if
 
 							! Find where you are in the simlength 3-hourly timeseries
-							nnMM5 = INT(nn/indatatsteps) + 1
-							nnfac = MOD(nn,indatatsteps)*1./indatatsteps
+							nnMM5 = INT(real(nn)/real(indatatsteps))+ 1
+							nnfac = MOD(nn,indatatsteps)/indatatsteps  !MOD(nn,indatatsteps)*1./indatatsteps 
 
 							unow(:,:,:,2) = lin_interp3D(u(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
 

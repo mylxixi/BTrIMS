@@ -1,0 +1,81 @@
+Warning: support for the NVIDIA HPC SDK is still in a beta stage, and many
+packages in /apps do not support bindings for the NVIDIA fortran compiler.
+Support for more packages is being added over time, but is not yet complete
+To disable this warning, set the NCI_NVIDIA_HPC_SDK_NO_WARN environment
+variable before loading the module.
+back_traj:
+   3711, Complex loop carried dependence of lat2d,tmp$r$sd1647,tmp$r prevents parallelization
+         Loop carried dependence due to exposed use of tempnow(:,:,:) prevents parallelization
+         Complex loop carried dependence of tmp$r1468$sd1648 prevents parallelization
+         Loop carried scalar dependence for tmp$r1468 at line 3734
+         Loop carried scalar dependence for tmp$r at line 3734
+         Loop carried dependence due to exposed use of wv_cont_day(:,:),wv_cont(:,:),tmp$r$sd1647(:),tmp$r(:),tmp$r1468$sd1648(:),lat2d(:,:),wnow(:,:,:,:) prevents parallelization
+         Complex loop carried dependence of tmp$r1468 prevents parallelization
+         Loop carried dependence due to exposed use of lon2d(:,:),tmp$r1468(:),unow(:,:,:,:),vnow(:,:,:,:),psfc_then(:,:),pres(:,:,:,:),pres_then(:,:,:) prevents parallelization
+         Complex loop carried dependence of lon2d,wv_cont_day prevents parallelization
+   3716, Loop is parallelizable
+         Generating Multicore code
+       3716, !$acc loop gang
+             Generating implicit reduction(+:precip$r)
+   3724, Loop is parallelizable
+         Generating Multicore code
+       3724, !$acc loop gang
+   3726, Loop is parallelizable
+         Generating Multicore code
+       3726, !$acc loop gang
+             Generating implicit reduction(+:precip$r1456)
+   3734, Loop is parallelizable
+         Generating Multicore code
+       3734, !$acc loop gang
+   3742, Scalar last value needed after loop for tmp$r1468 at line 3734
+         Generating Multicore code
+       3742, !$acc loop gang
+   3752, Scalar last value needed after loop for tmp$r1468 at line 3734
+   3754, Loop is parallelizable
+   3775, Reference argument passing prevents parallelization: par_lev
+         Loop is parallelizable
+   3782, Reference argument passing prevents parallelization: ttfac
+         Loop is parallelizable
+   3785, Reference argument passing prevents parallelization: ttfac
+         Loop is parallelizable
+   3792, Loop carried dependence due to exposed use of tmp$r1468(:),unow(:,:,:,:),wnow(:,:,:,:),vnow(:,:,:,:),psfc_then(:,:),pres_then(:,:,:) prevents parallelization
+         Complex loop carried dependence of tmp$r1468$sd1648,tmp$r$sd1647 prevents parallelization
+         Loop carried dependence due to exposed use of tmp$r(:),tempnow(:,:,:) prevents parallelization
+   3810, Reference argument passing prevents parallelization: nnfac
+   3812, Reference argument passing prevents parallelization: nnfac
+   3814, Reference argument passing prevents parallelization: nnfac
+   3817, Reference argument passing prevents parallelization: nnfac
+   3823, Reference argument passing prevents parallelization: nnfac
+   3825, Reference argument passing prevents parallelization: nnfac
+   3827, Reference argument passing prevents parallelization: nnfac
+   3830, Reference argument passing prevents parallelization: nnfac
+   3832, Reference argument passing prevents parallelization: nnfac
+   3834, Reference argument passing prevents parallelization: par_q
+         Reference argument passing prevents parallelization: par_pres
+         Reference argument passing prevents parallelization: par_lon
+         Reference argument passing prevents parallelization: par_lat
+         Reference argument passing prevents parallelization: par_lev
+   3839, Reference argument passing prevents parallelization: y
+         Reference argument passing prevents parallelization: x
+         Reference argument passing prevents parallelization: par_lon
+         Reference argument passing prevents parallelization: par_lat
+   3842, Reference argument passing prevents parallelization: nnfac
+   3846, Reference argument passing prevents parallelization: nnfac
+   3847, Reference argument passing prevents parallelization: nnfac
+   3851, Reference argument passing prevents parallelization: nnfac
+   3860, Loop is parallelizable
+   3865, Loop is parallelizable
+   3868, Loop is parallelizable
+   3872, Loop is parallelizable
+   3875, Loop is parallelizable
+   3889, Loop is parallelizable
+   3890, Loop carried scalar dependence for wv_cont_day$r at line 3890
+         Scalar last value needed after loop for wv_cont_day$r at line 3890
+   3902, Loop is parallelizable
+         Generating Multicore code
+       3902, !$acc loop gang
+   3905, Loop is parallelizable
+         Generating Multicore code
+       3905, !$acc loop gang
+             Generating implicit reduction(+:precip$r1463)
+0: DEALLOCATE: memory at (nil) not allocated
