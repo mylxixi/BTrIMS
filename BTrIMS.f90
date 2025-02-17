@@ -76,17 +76,17 @@ SAVE
 INTEGER :: sday,smon,syear    !start day for calculations
 INTEGER :: edday,edmon,edyear !end day for calculations (Exclusive. Must be at least one day after start day)
 INTEGER :: totdays
-INTEGER, PARAMETER :: totbtadays = 15   !number of days of data to keep for bta; i.e. how far back in time to calc.
+INTEGER, PARAMETER :: totbtadays = 3   !number of days of data to keep for bta; i.e. how far back in time to calc.
                                        !must be less than days you have input data for
-INTEGER, PARAMETER :: tstep = 15   !number of minutes for back trajectory time step (simultion time step)
+INTEGER, PARAMETER :: tstep = 30   !number of minutes for back trajectory time step (simultion time step)
                       !must divide evenly into number of minutes in day 1440 and number of minutes in MM5 time step (here 180)
-INTEGER, PARAMETER :: nparcels = 1000   !set the number of parcels to release if it rains
+INTEGER, PARAMETER :: nparcels = 10	   !set the number of parcels to release if it rains
 REAL, PARAMETER :: minpre = 1   !min daily precip to deal with (mm)
 
 INTEGER, PARAMETER :: bdy = 6   !boundary layers to ignore; trajectories will be tracked to this boundary
 
 CHARACTER(LEN=50), PARAMETER :: diri = "/g/data/hh5/tmp/w28/jpe561/back_traj/" 
-CHARACTER(LEN=60), PARAMETER :: diri_era5 = "/scratch/w40/ym7079/B_TrIMS_test/test0/masks_3cases/"  !len=50  to len=60
+CHARACTER(LEN=60), PARAMETER :: diri_era5 = "/scratch/w40/ym7079/"  !len=50  to len=60
 ! CHARACTER(LEN=50), PARAMETER :: diri = "/srv/ccrc/data03/z3131380/PartB/Masks/"
 ! CHARACTER(LEN=100), PARAMETER :: diro = "/g/data/xc0/user/Holgate/QIBT/exp02/"
 CHARACTER(LEN=100) :: diro  
@@ -96,9 +96,9 @@ CHARACTER(LEN=100), PARAMETER :: dirdata_land = "/g/data/hh5/tmp/w28/jpe561/back
 ! CHARACTER(LEN=100), PARAMETER :: dirdata_atm = "/srv/ccrc/data33/z3481416/CCRC-WRF3.6.0.5-SEB/ERA-Interim/R2_nudging/out/"
 ! CHARACTER(LEN=100), PARAMETER :: dirdata_land = "/srv/ccrc/data03/z3131380/PartB/NARCliM_postprocess/" 
 
-INTEGER, PARAMETER :: numthreads = 102   !set the number of parallel openmp threads
+INTEGER, PARAMETER :: numthreads = 6   !set the number of parallel openmp threads
 
-LOGICAL, PARAMETER :: peak = .FALSE.	!does the daylist indicate storm peaks (TRUE) or whole days (FALSE)
+LOGICAL, PARAMETER :: peak = .FALSE. !does the daylist indicate storm peaks (TRUE) or whole days (FALSE)
 
 LOGICAL, PARAMETER :: wshed = .TRUE. !only calculate trajectories for watershed
 
@@ -136,6 +136,7 @@ REAL, PARAMETER :: Cl = 4400     !heat capacity of liquid water at ~-20C (J/kgK)
 REAL, PARAMETER :: pi = 3.14159265
 REAL, PARAMETER :: deg_dist = 111.   !average distance of 1 degree lat is assumed to be 111km
 REAL, PARAMETER :: water_density = 1000 ! density of water (kg/m3)
+!$acc declare create(totdays,daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,fdim_i,fdim_j,ssdim,dim_i_start, dim_j_start, dim_k_start,dim_i_end, dim_j_end, dim_k_end,day,mon,year,totpts,datansteps)
 
 END MODULE global_data
 
@@ -237,9 +238,10 @@ MODULE util
 
 		if (integ<0) str(50-i-1:50-i) = "-"
 
-		int_to_string = adjustl(str)
+		int_to_string = adjustl(str)         
 
 	end FUNCTION int_to_string
+
 
 	!***********************************************************************
 
@@ -457,8 +459,8 @@ MODULE util
 		REAL, DIMENSION(:), INTENT(IN) :: arr
 		REAL, INTENT(IN)               :: in_start, in_end
 		INTEGER, INTENT(OUT)           :: i_start, i_end
-		LOGICAL,OPTIONAL,INTENT(IN)    :: reverse
-		LOGICAL,OPTIONAL,INTENT(IN)    :: periodic
+		LOGICAL,INTENT(IN)    :: reverse
+		LOGICAL,INTENT(IN)    :: periodic
 
 		!!! Locals
 		INTEGER :: i
@@ -466,7 +468,7 @@ MODULE util
 
 		i_start = -1
 		i_end   = -1
-		if( .not.present(periodic) .or. .not.periodic ) then
+		if(.not.periodic ) then
 			if ( in_start > in_end ) then
 				!!! Swap bounds if necessary
 				end   = in_start
@@ -481,7 +483,7 @@ MODULE util
 		end if
 
 
-		if( present(reverse) .and. reverse ) then
+		if( reverse ) then
 			do i=1,SIZE(arr)
 				if ( i_start == -1 ) then
 					if ( abs(arr(i) - end) < delta_coord ) i_start = i
@@ -505,7 +507,7 @@ MODULE util
 
 		if ( i_start == -1 ) i_start = 1
 		if ( i_end == -1 ) then
-			if ( present(periodic) .and. periodic ) then
+			if ( periodic ) then
 				!!! If we haven't found and 'end', check if we need to wrap around
 				if ( end < start ) then
 					!!! Redo the loop from the start
@@ -592,6 +594,7 @@ MODULE bt_subs
 		print *,'outfile=',TRIM(diro)//"bt."//TRIM(int_to_string(year))//"0" &
 				//TRIM(int_to_string(mon))//"_"//TRIM(int_to_string(INT(daynum)))// &
 				".nc"
+
 		!
 		!define dimensions
 		!
@@ -601,6 +604,7 @@ MODULE bt_subs
 		if (status /= NF90_NOERR) call handle_err(status)
 		status = nf90_def_dim(outncid,"gridcell_wvc",nf90_unlimited,gwvcdimid)
 		if (status /= NF90_NOERR) call handle_err(status)
+
 		!
 		!define the variable
 		!
@@ -621,6 +625,8 @@ MODULE bt_subs
 		if (status /= NF90_NOERR) call handle_err(status)
 		status = nf90_def_var(outncid,"longicrs",nf90_float,(/jdimid,idimid/),lonid)
 		if (status /= NF90_NOERR) call handle_err(status)
+
+
 		!
 		!define attributes
 		!
@@ -664,10 +670,12 @@ MODULE bt_subs
 		status = nf90_put_att(outncid,lonid,"units","degrees")
 		if (status /= NF90_NOERR) call handle_err(status)
 
+
 		!
 		!leave define mode
 		!
 		status = nf90_enddef(outncid)
+
 
 		status = nf90_put_var(outncid,latid,lat2d,start=(/1,1/),count=(/dim_j,dim_i/))
 		if(status /= nf90_NoErr) call handle_err(status)
@@ -678,10 +686,15 @@ MODULE bt_subs
 
 	!***********************************************************************
 
+    
+
+     
 
 	!***********************************************************************  
 
 	REAL FUNCTION lin_interp(var,fac)
+	!$acc routine seq
+
 	!---------------------------------------
 	!linearly interpolate between the values of var
 	!fac is the proporational distance from the first value
@@ -699,6 +712,7 @@ MODULE bt_subs
 	!***********************************************************************
 
 	FUNCTION lin_interp2D(var,fac)
+	!$acc routine seq
 	!---------------------------------------
 	!linearly interpolate between the values of var (last dimension must have size 2)
 	!fac is the proporational distance from the first value
@@ -718,6 +732,7 @@ MODULE bt_subs
 	!***********************************************************************
 
 	FUNCTION lin_interp3D(var,fac)
+	!$acc routine seq
 	!---------------------------------------
 	!linearly interpolate between the values of var (last dimension must have size 2)
 	!fac is the proporational distance from the first value
@@ -734,11 +749,99 @@ MODULE bt_subs
 
 	END FUNCTION lin_interp3D
 
+	!***********************************************************************
 
+	SUBROUTINE parcel_release_time(precip,randnums_t,par_release)
+	!$acc routine seq
+	!---------------------------------------------------
+	! here we calculate the times of day to release our parcels
+	! based on a random precipitation weighted sampling
+	!-----------------------------------------------------
+
+		USE global_data
+
+		IMPLICIT NONE
+
+		REAL, DIMENSION(:), INTENT(IN) :: precip
+		INTEGER, DIMENSION(:), INTENT(OUT) :: par_release
+		REAL, DIMENSION(:), INTENT(IN) :: randnums_t
+
+		REAL, DIMENSION(SIZE(precip)*indatatsteps) :: cumm_precip
+		INTEGER :: tt,rr,ss,rec
+
+
+		par_release = 0
+
+		cumm_precip = 0.
+
+		rec = 0
+
+		do tt = 1,SIZE(precip)
+			do ss = 1,indatatsteps
+				rec = rec + 1
+				if (rec==1) then
+					cumm_precip(1) = precip(1)/indatatsteps
+				else
+					cumm_precip(rec) = cumm_precip(rec-1) + precip(tt)/indatatsteps
+				end if
+			end do
+		end do
+
+		cumm_precip = cumm_precip/cumm_precip(SIZE(cumm_precip))
+
+		do rr = 1,SIZE(randnums_t)
+			do tt = 1,SIZE(cumm_precip)
+				if (cumm_precip(tt)>randnums_t(rr)) then
+					par_release(tt) = par_release(tt) + 1
+					EXIT
+				end if
+			end do
+		end do
+
+
+	END SUBROUTINE parcel_release_time
 
 	!***********************************************************************
 
-	SUBROUTINE lin_interp_inMM5tsteps(var)  !Yinglin: I don't think this is right
+	SUBROUTINE parcel_release_height(pw,randnums_h,par_lev)
+	!$acc routine seq
+	!----------------------------------------------
+	! calculate the height to release the parcel from
+	! based on precipitable water weighted random sampling
+	!-----------------------------------------------
+
+		IMPLICIT NONE
+
+		REAL, INTENT(IN), DIMENSION(:) :: pw ! This is the precipitable water, accumulated from the ground up, in the column at that point in time.
+		REAL,INTENT(INOUT) :: randnums_h
+		INTEGER, INTENT(OUT) :: par_lev
+
+		
+		INTEGER :: kk
+
+
+		! Take random number as a random proportion of the total pw in the column at that time; pw(1) is the pw at the top of the atm column, which represents the accumulated pw over the column below it (same as TPW).
+		randnums_h = randnums_h * pw(1)
+
+		do kk = SIZE(pw),1,-1 ! kk is then between 29 and 1
+			if (pw(kk)>randnums_h) then
+				par_lev = kk
+				EXIT
+			end if
+		end do
+
+                !print *,"release height,pw, ",par_lev,pw
+
+		! For testing purposes only: take random number as a purely random model level, not weighted by pw.
+		!rand_num = 1 + FLOOR(size(pw)*rand_num)
+		!par_lev = rand_num
+
+	END SUBROUTINE parcel_release_height
+
+	!***********************************************************************
+
+	SUBROUTINE lin_interp_inMM5tsteps(var)
+		!$acc routine seq
 	!------------------------------------------
 	!linearly interpolate through time inside MM5 time steps
 	!----------------------------------------------
@@ -755,6 +858,7 @@ MODULE bt_subs
 		  var(:,:,:,i+1::indatatsteps) = (1-(i*1./indatatsteps))*var(:,:,:,1:datadaysteps+1-indatatsteps:indatatsteps) &
 		                 & + (i*1./indatatsteps)*var(:,:,:,1+indatatsteps::indatatsteps)
 		end do
+
 
 	END SUBROUTINE lin_interp_inMM5tsteps
 
@@ -782,30 +886,32 @@ MODULE bt_subs
 		REAL, INTENT(IN) :: ptop
 
 		!
-		!calculate the change in pressure (Pa) represented by each point
+		! calculate the change in pressure (Pa) represented by each point
 		!
 		!for highest level
-		dp(:,:,1,:) = SUM(pres(:,:,:2,:),3)/2. - ptop	
+		dp(:,:,1,:) = SUM(pres(:,:,:2,:),3)/2. - ptop
+
+		
                 !need to account for posibility that pressure levels go below the ground
                 !for the middle levels
 		do k = 2,dim_k-1
-			where (pres(:,:,k+1,:) <= surf_pres(:,:,:)) 
-				dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2. !dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
-			elsewhere (pres(:,:,k,:) <= surf_pres(:,:,:))
-				!for the lowest level above surface
-				dp(:,:,k,:) = surf_pres(:,:,:) - (pres(:,:,k,:) + pres(:,:,k-1,:))/2.
-			elsewhere
-				dp(:,:,k,:) = 0.
-			end where
+                        where (pres(:,:,k+1,:) <= surf_pres(:,:,:)) 
+			        dp(:,:,k,:) = (pres(:,:,k+1,:) - pres(:,:,k-1,:)) /2. !dp(:,:,k,:) = SUM(pres(:,:,k-1:k+1:2,:),3)/2.
+                        elsewhere (pres(:,:,k,:) <= surf_pres(:,:,:))
+                                !for the lowest level above surface
+                                dp(:,:,k,:) = surf_pres(:,:,:) - (pres(:,:,k,:) + pres(:,:,k-1,:))/2.
+                        elsewhere
+                                dp(:,:,k,:) = 0.
+                        end where
 
 		end do
 
 		!for the lowest level
-		where (pres(:,:,dim_k,:) <= surf_pres(:,:,:))
-		dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
-		elsewhere
-				dp(:,:,dim_k,:) = 0.
-		end where
+                where (pres(:,:,dim_k,:) <= surf_pres(:,:,:))
+		        dp(:,:,dim_k,:) = surf_pres(:,:,:) - SUM(pres(:,:,dim_k-1:,:),3)/2.
+                elsewhere
+                        dp(:,:,dim_k,:) = 0.
+                end where
 
 		!mass in mm
 		pw(:,:,:,::indatatsteps) = dp*mix/g
@@ -813,14 +919,12 @@ MODULE bt_subs
 		!interpolate inside input data time steps
 		call lin_interp_inMM5tsteps(pw)
 
-		!accumulate from the bottom up. The precipitable water is then the total moisture in the column below it.
-		!------------------Yinglin: changed the usage of 'pw', fixed layer rather than weighted, so 'pw' should be just the layer, not accumulated below it.
 
-		! do k = dim_k-1,1,-1             ! i.e. from level 28 to 1
-		! 	!pw(:,:,k,2:) = pw(:,:,k+1,2:) + pw(:,:,k,2:)! THE PW IS ACCUMULATED FROM THE SECOND TS ON, SO THE FIRST 10MIN IS NOT ACCUMULATED. WHY?? This only matters if tt=1. Here I change it to do all timesteps.
-		! 	pw(:,:,k,:) = pw(:,:,k+1,:) + pw(:,:,k,:)
-		! end do
-		!------------------------------------------------------------
+		!accumulate from the bottom up. The precipitable water is then the total moisture in the column below it.
+		do k = dim_k-1,1,-1             ! i.e. from level 28 to 1
+			!pw(:,:,k,2:) = pw(:,:,k+1,2:) + pw(:,:,k,2:)! THE PW IS ACCUMULATED FROM THE SECOND TS ON, SO THE FIRST 10MIN IS NOT ACCUMULATED. WHY?? This only matters if tt=1. Here I change it to do all timesteps.
+			pw(:,:,k,:) = pw(:,:,k+1,:) + pw(:,:,k,:)
+		end do
 		! print *,shape(pw)
 		! print *,"pw ",pw(1,1,dim_k,:),surf_pres(1,1,1),ptop
 
@@ -1072,89 +1176,112 @@ MODULE bt_subs
 	!***********************************************************************
 
 	SUBROUTINE calc_pbl_lev(pbl_hgt,pres,surf_pres,pbl_lev)
-	!------------------------------------------------
-	! SUBROUTINE UNUSED
-
-	! calculate the model level just above the pbl height
-	!-----------------------------------------------------
-
-	USE global_data
-
-		IMPLICIT NONE
-
-		REAL, INTENT(IN), DIMENSION(:,:,:,:) :: pres
-		REAL, INTENT(IN), DIMENSION(:,:,:) ::pbl_hgt,surf_pres
-
-		INTEGER, INTENT(OUT), DIMENSION(:,:,:) :: pbl_lev
-
-
-		REAL, DIMENSION(dim_j,dim_i,datatotsteps) :: pbl_pres
-		INTEGER :: j,i,t
-		INTEGER,DIMENSION(1) :: dummy_min
-
-
-		!
-		! calculate pressure at the pbl height using the hydrostatic equation
-		! here I assume that the density averages 1kg m-3 in the pbl
-		!
-		pbl_pres = -1*pbl_hgt*g + surf_pres        
-
-		!
+		!------------------------------------------------
+		! SUBROUTINE UNUSED
+	
 		! calculate the model level just above the pbl height
-		! also add the level above that as it gains moisture by detrainment from the
-		! PBL and so this moisture can also be associated with the current
-		! location
-		!
-		do j = 1,dim_j
-			do i = 1,dim_i
-				do t = 1,datatotsteps
-					dummy_min = MINLOC(abs(pbl_pres(j,i,t) - pres(j,i,:,t)))
-					if ((pbl_pres(j,i,t) - pres(j,i,dummy_min(1),t)) < 0.) then
-						pbl_lev(j,i,t) = dummy_min(1) - 2
-					else
-						pbl_lev(j,i,t) = dummy_min(1) - 1
-					end if
+		!-----------------------------------------------------
+	
+		USE global_data
+	
+			IMPLICIT NONE
+	
+			REAL, INTENT(IN), DIMENSION(:,:,:,:) :: pres
+			REAL, INTENT(IN), DIMENSION(:,:,:) ::pbl_hgt,surf_pres
+	
+			INTEGER, INTENT(OUT), DIMENSION(:,:,:) :: pbl_lev
+	
+	
+			REAL, DIMENSION(dim_j,dim_i,datatotsteps) :: pbl_pres
+			INTEGER :: j,i,t,r
+			REAL :: min_value
+			INTEGER,DIMENSION(1) :: dummy_min
+	
+	
+			!
+			! calculate pressure at the pbl height using the hydrostatic equation
+			! here I assume that the density averages 1kg m-3 in the pbl
+			!
+			pbl_pres = -1*pbl_hgt*g + surf_pres        
+	
+			!
+			! calculate the model level just above the pbl height
+			! also add the level above that as it gains moisture by detrainment from the
+			! PBL and so this moisture can also be associated with the current
+			! location
+			!
+			do j = 1,dim_j
+				do i = 1,dim_i
+					do t = 1,datatotsteps
+						do r = 1, SIZE(pres,3)
+							if (r == 1) then
+								min_value = abs(pbl_pres(j,i,t) - pres(j,i,r,t))
+								dummy_min = r
+							else if (abs(pbl_pres(j,i,t) - pres(j,i,r,t)) < min_value) then
+								min_value = abs(pbl_pres(j,i,t) - pres(j,i,r,t))
+								dummy_min = r
+							end if
+						end do
+						if ((pbl_pres(j,i,t) - pres(j,i,dummy_min(1),t)) < 0.) then
+							pbl_lev(j,i,t) = dummy_min(1) - 2
+						else
+							pbl_lev(j,i,t) = dummy_min(1) - 1
+						end if
+					end do
 				end do
 			end do
-		end do
-
-	END SUBROUTINE calc_pbl_lev
+	
+		END SUBROUTINE calc_pbl_lev
 
 	!***********************************************************************
 
 	SUBROUTINE near_pt(lon2d,lat2d,lon,lat,x,y)
-	!---------------------------------------------------------
-	!calculate the grid point nearest the lat and lon location
-	!------------------------------------------------------
-
-		USE global_data
-
-		IMPLICIT NONE
-
-		REAL, INTENT(IN), DIMENSION(:,:) :: lon2d,lat2d
-		REAL, INTENT(IN) :: lon,lat
-		INTEGER, INTENT(OUT) :: x,y
-
-		REAL, DIMENSION(SIZE(lon2d(:,1)),SIZE(lon2d(1,:))) :: dist
-		INTEGER, DIMENSION(2) :: loc
-
-		REAL, DIMENSION(SIZE(lon2d(:,1)),SIZE(lon2d(1,:))) :: lcos ! --svetlana
-
-		!
-		!calculate the distance from the parcel location to every grid point
-		!must account for changing distance between longitude lines as latitude changes
-		!
-		!call vsCos(SIZE(lat2d(:,1))*SIZE(lat2d(1,:)), lat2d*pi/180, lcos) ! -- svetlana
-		lcos=cos(lat2d*pi/180)
-		dist = sqrt((lat2d-lat)**2 + (lcos*(lon2d-lon))**2) ! --svetlana
-		!  dist = (lat2d-lat)**2 + cos(lat2d*pi/180)*(lon2d-lon)**2 ! --svetlana
-
-		loc = MINLOC(dist)
-
-		x = loc(1)
-		y = loc(2)
-
-	END SUBROUTINE near_pt
+		!---------------------------------------------------------
+		!calculate the grid point nearest the lat and lon location
+		!------------------------------------------------------
+	
+			USE global_data
+	
+			IMPLICIT NONE
+	
+			REAL, INTENT(IN), DIMENSION(:,:) :: lon2d,lat2d
+			REAL, INTENT(IN) :: lon,lat
+			INTEGER, INTENT(OUT) :: x,y
+	
+			REAL, DIMENSION(SIZE(lon2d(:,1)),SIZE(lon2d(1,:))) :: dist
+			INTEGER, DIMENSION(2) :: loc
+	
+			REAL, DIMENSION(SIZE(lon2d(:,1)),SIZE(lon2d(1,:))) :: lcos ! --svetlana
+			REAL :: min_value
+			INTEGER :: c,r
+			!
+			!calculate the distance from the parcel location to every grid point
+			!must account for changing distance between longitude lines as latitude changes
+			!
+			!call vsCos(SIZE(lat2d(:,1))*SIZE(lat2d(1,:)), lat2d*pi/180, lcos) ! -- svetlana
+			lcos=cos(lat2d*pi/180)
+			dist = sqrt((lat2d-lat)**2 + (lcos*(lon2d-lon))**2) ! --svetlana
+			! dist = (lat2d-lat)**2 + cos(lat2d*pi/180)*(lon2d-lon)**2 ! --svetlana
+			
+			! 设置初始最小值和位置
+			min_value = dist(1, 1)
+			loc(1) = 1
+			loc(2) = 1
+		
+			! 查找二维矩阵中的最小值及其位置
+			do c = 1, SIZE(lon2d(:,1))
+				do r = 1, SIZE(lon2d(1,:))
+					if (dist(c, r) < min_value) then
+						min_value = dist(c, r)
+						loc(1) = c
+						loc(2) = r
+					end if
+				end do
+			end do
+			x = loc(1)
+			y = loc(2)
+	
+		END SUBROUTINE near_pt
 
 	!***********************************************************************
 
@@ -1265,56 +1392,63 @@ MODULE bt_subs
 
 	!***********************************************************************
 
-	SUBROUTINE new_parcel_level_w(par_pres,pres,w,temp,mix,lev,psfc)
-	!-------------------------------------------------------------------------
-	!calculate the new parcel level given w at this location
-	!--------------------------------------------------------------------------
-
-		USE global_data
-
-		IMPLICIT NONE
-
-		REAL, INTENT(IN) :: w,temp,mix,psfc
-		REAL, INTENT(IN), DIMENSION(:) :: pres
-		REAL, INTENT(INOUT) :: par_pres
-		INTEGER, INTENT(OUT) :: lev
-
-		INTEGER, DIMENSION(1) :: dummy_lev
-
-                !If w is in ms-1 then use this
-                !
-		! Here I use the hydrostatic eqn to calculate the change in pressure given w.
-		! deltaP = rho*g*deltaz when in hydrostatic equilibrium
-		! Note that "(1+0.61*mix)*temp" is the virtual temp. See p80 Wallace & Hobbs.
-		!
-
-		!par_pres = par_pres + -1.*(par_pres/(Rd*(1+0.61*mix)*temp))*g*w*tstep*60
-
-                !If w is in Pas-1 (so it is really omega) then use this
-                par_pres = par_pres + w*tstep*60
-
-                !if the parcel is below the surface pressure then move it to 5hPa above the surface
-                if (par_pres > psfc) par_pres = psfc - 5. 
-
-		! Find the model level where the difference in pressure between the parcel
-		! and the atmosphere is the smallest, i.e. which height in pres does the
-		! smallest difference occur, where pres dims are (lat,lon,height).
-		dummy_lev = MINLOC(ABS(pres - par_pres))
-
-		lev = dummy_lev(1)
-
-		!if the parcel is below the lowest model level then set it to the lowest level
-		!if (par_pres > MAXVAL(pres)) par_pres = MAXVAL(pres)
-                
-                !make sure the level used is above the surface pressure (not underground)
-                if (pres(lev) > psfc) lev = lev - 1
-
-		! if (lev==0) then
-		!   print *,'par_lev_w - pres_dis',(pres - par_pres),temp,w
-		!   print *,'par_lev_w -',par_pres,pres
-		! end if
-
-	END SUBROUTINE new_parcel_level_w
+	SUBROUTINE new_parcel_level_w(par_pres,pres,w,mix,lev,psfc)  ! this has been changed
+		!-------------------------------------------------------------------------
+		!calculate the new parcel level given w at this location
+		!--------------------------------------------------------------------------
+	
+			USE global_data
+	
+			IMPLICIT NONE
+	
+			REAL, INTENT(IN) :: w,mix,psfc
+			REAL, INTENT(IN), DIMENSION(:) :: pres
+			REAL, INTENT(INOUT) :: par_pres
+			INTEGER, INTENT(OUT) :: lev
+			REAL :: min_value
+			INTEGER :: r
+	
+					!If w is in ms-1 then use this
+					!
+			! Here I use the hydrostatic eqn to calculate the change in pressure given w.
+			! deltaP = rho*g*deltaz when in hydrostatic equilibrium
+			! Note that "(1+0.61*mix)*temp" is the virtual temp. See p80 Wallace & Hobbs.
+			!
+	
+			!par_pres = par_pres + -1.*(par_pres/(Rd*(1+0.61*mix)*temp))*g*w*tstep*60
+	
+					!If w is in Pas-1 (so it is really omega) then use this
+					par_pres = par_pres + w*tstep*60
+	
+					!if the parcel is below the surface pressure then move it to 5hPa above the surface
+					if (par_pres > psfc) par_pres = psfc - 5. 
+	
+			! Find the model level where the difference in pressure between the parcel
+			! and the atmosphere is the smallest, i.e. which height in pres does the
+			! smallest difference occur, where pres dims are (lat,lon,height).
+	
+			lev = 1
+			min_value = abs(par_pres - pres(1))
+	
+			do r = 2, size(pres,1)
+				if (abs(par_pres - pres(r)) < min_value) then
+					min_value = abs(par_pres - pres(r))
+					lev = r
+				end if
+			end do
+	
+			!if the parcel is below the lowest model level then set it to the lowest level
+			!if (par_pres > MAXVAL(pres)) par_pres = MAXVAL(pres)
+					
+					!make sure the level used is above the surface pressure (not underground)
+			if (pres(lev) > psfc) lev = lev - 1
+	
+			! if (lev==0) then
+			!   print *,'par_lev_w - pres_dis',(pres - par_pres),temp,w
+			!   print *,'par_lev_w -',par_pres,pres
+			! end if
+	
+		END SUBROUTINE new_parcel_level_w
 
 	!***********************************************************************
 
@@ -1504,7 +1638,7 @@ MODULE bt_subs
 		else
 			pr = par_pres
 			call bilin_interp(w(:,:,par_lev,2),lon2d,lat2d,xx,yy,lon,lat,w_back)
-                        call new_parcel_level_w(pr,pres(xx,yy,:),w_back,temp_back,par_q,lev,psfc(xx,yy))
+            call new_parcel_level_w(pr,pres(xx,yy,:),w_back,par_q,lev,psfc(xx,yy))
 		end if
 
 		!print *,'2nd',par_pres,par_pot_temp,par_lon,par_lat,par_lev,thread
@@ -1605,7 +1739,7 @@ MODULE bt_subs
 
 		else
 			call bilin_interp(w(:,:,par_lev,1),lon2d,lat2d,xx,yy,lon,lat,w_for)
-			call new_parcel_level_w(par_pres,pres(xx,yy,:),(w_back+w_for)/2.,temp_back,par_q,lev,psfc(xx,yy))
+			call new_parcel_level_w(par_pres,pres(xx,yy,:),(w_back+w_for)/2.,par_q,lev,psfc(xx,yy))
 
 			!need to calculate the new parcel potential temperature
 			call bilin_interp(pot_temp(:,:,lev),lon2d,lat2d,xx,yy,par_lon,par_lat,pt1)
@@ -1626,7 +1760,7 @@ MODULE bt_subs
 
 
 		if (lev==0) then
-		  print *,'L2389, ',par_lev,lev,par_pres,par_pot_temp,temp_back,thread
+		  print *,'L2389, ',par_lev,lev,par_pres,par_pot_temp,temp_back
 		  STOP
 		end if
 
@@ -1638,7 +1772,7 @@ MODULE bt_subs
 
 	SUBROUTINE implicit_back_traj_w(u,v,w,temp,pres,psfc,lon2d,lat2d, &
 					par_lon,par_lat,par_lev, &
-					par_pres,par_q,thread)
+					par_pres,par_q)
 	!-------------------------------------------------------------------------------
 	! Using Merrill's fully implicit  technique
 	! calculate the parcels position one time step before
@@ -1660,7 +1794,6 @@ MODULE bt_subs
 		REAL, INTENT(INOUT) :: par_lon,par_lat,par_pres
 		REAL, INTENT(IN) :: par_q
 		INTEGER, INTENT(INOUT) :: par_lev
-		INTEGER, INTENT(IN) :: thread
 
 		INTEGER :: xx,yy,lev !ll
 		REAL :: lon,lat,u_back,v_back,w_par,temp_par,u_for,v_for,pr
@@ -1686,7 +1819,7 @@ MODULE bt_subs
 		call bilin_interp(temp(:,:,par_lev),lon2d,lat2d,xx,yy,lon,lat,temp_par)
 		call bilin_interp(w(:,:,par_lev,2),lon2d,lat2d,xx,yy,lon,lat,w_par)
 		! Reverse vertical wind direction as you're going back in time.
-		call new_parcel_level_w(pr,pres(xx,yy,:),-1.*w_par,temp_par,par_q,lev,psfc(xx,yy))
+		call new_parcel_level_w(pr,pres(xx,yy,:),-1.*w_par,par_q,lev,psfc(xx,yy))
 
 		!get u and v at new lon/lat found using first advect call above
 		call bilin_interp(u(:,:,lev,1),lon2d,lat2d,xx,yy,lon,lat,u_for)
@@ -1702,10 +1835,10 @@ MODULE bt_subs
 
 		call bilin_interp(temp(:,:,par_lev),lon2d,lat2d,xx,yy,par_lon,par_lat,temp_par)
 		call bilin_interp(w(:,:,par_lev,1),lon2d,lat2d,xx,yy,par_lon,par_lat,w_par)
-		call new_parcel_level_w(par_pres,pres(xx,yy,:),-1.*w_par,temp_par,par_q,lev,psfc(xx,yy))
+		call new_parcel_level_w(par_pres,pres(xx,yy,:),-1.*w_par,par_q,lev,psfc(xx,yy))
 
 		if (lev==0) then
-		  print *,'parcel lev=0',par_lev,lev,par_pres,temp_par,thread
+		  print *,'parcel lev=0',par_lev,lev,par_pres,temp_par
 		  STOP
 		end if
 
@@ -1718,6 +1851,735 @@ MODULE bt_subs
 
 END MODULE bt_subs
 
+!***********************************************************************
+!***********************************************************************
+
+MODULE input_data_handling_wrf
+
+	IMPLICIT NONE
+
+	CONTAINS
+
+	SUBROUTINE get_filename(d,mn,yr,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+	!-----------------------------------------------
+	! given the month and year get the filename extension string
+	!---------------------------------------------------
+
+		USE global_data
+		USE util
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(IN) :: d
+		INTEGER, INTENT(IN) :: mn, yr
+		CHARACTER(LEN=100), INTENT(OUT) :: filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P
+
+		if (mn<10) then
+			if (d<10) then
+				filename_ext_atm = "wrfout_d01_"//TRIM(int_to_string(yr))//"-0"//TRIM(int_to_string(mn))//"-0"//TRIM(int_to_string(d))//"_00:00:00"
+				filename_ext_RAIN = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-0"//TRIM(int_to_string(mn))//"-0"//TRIM(int_to_string(d))//"_00:00:00_RAIN.nc"
+				filename_ext_LH = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-0"//TRIM(int_to_string(mn))//"-0"//TRIM(int_to_string(d))//"_00:00:00_LH.nc"
+				filename_ext_P = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-0"//TRIM(int_to_string(mn))//"-0"//TRIM(int_to_string(d))//"_00:00:00_PSFC.nc"
+			else
+				filename_ext_atm = "wrfout_d01_"//TRIM(int_to_string(yr))//"-0"//TRIM(int_to_string(mn))//"-"//TRIM(int_to_string(d))//"_00:00:00"
+				filename_ext_RAIN = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-0"//TRIM(int_to_string(mn))//"-"//TRIM(int_to_string(d))//"_00:00:00_RAIN.nc"
+				filename_ext_LH = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-0"//TRIM(int_to_string(mn))//"-"//TRIM(int_to_string(d))//"_00:00:00_LH.nc"
+				filename_ext_P = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-0"//TRIM(int_to_string(mn))//"-"//TRIM(int_to_string(d))//"_00:00:00_PSFC.nc"
+			end if
+		else
+			if (d<10) then
+				filename_ext_atm = "wrfout_d01_"//TRIM(int_to_string(yr))//"-"//TRIM(int_to_string(mn))//"-0"//TRIM(int_to_string(d))//"_00:00:00"
+				filename_ext_RAIN = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-"//TRIM(int_to_string(mn))//"-0"//TRIM(int_to_string(d))//"_00:00:00_RAIN.nc"
+				filename_ext_LH = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-"//TRIM(int_to_string(mn))//"-0"//TRIM(int_to_string(d))//"_00:00:00_LH.nc"
+				filename_ext_P = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-"//TRIM(int_to_string(mn))//"-0"//TRIM(int_to_string(d))//"_00:00:00_PSFC.nc"
+			else
+				filename_ext_atm = "wrfout_d01_"//TRIM(int_to_string(yr))//"-"//TRIM(int_to_string(mn))//"-"//TRIM(int_to_string(d))//"_00:00:00"
+				filename_ext_RAIN = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-"//TRIM(int_to_string(mn))//"-"//TRIM(int_to_string(d))//"_00:00:00_RAIN.nc"
+				filename_ext_LH = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-"//TRIM(int_to_string(mn))//"-"//TRIM(int_to_string(d))//"_00:00:00_LH.nc"
+				filename_ext_P = "wrfhrly_d01_"//TRIM(int_to_string(yr))//"-"//TRIM(int_to_string(mn))//"-"//TRIM(int_to_string(d))//"_00:00:00_PSFC.nc"
+			end if
+		end if
+
+		filename_ext_atm = ADJUSTL(filename_ext_atm)
+		filename_ext_RAIN = ADJUSTL(filename_ext_RAIN)
+		filename_ext_LH = ADJUSTL(filename_ext_LH)
+		filename_ext_P = ADJUSTL(filename_ext_P)
+
+		print *,'get_filename:'
+		print *,'filename_ext_atm= ',filename_ext_atm
+		print *,'filename_ext_RAIN= ',filename_ext_RAIN
+		print *,'filename_ext_LH= ',filename_ext_LH
+
+	END SUBROUTINE get_filename
+
+	!***********************************************************************
+
+	SUBROUTINE open_netcdf_files(ncid,prencid,lhncid,psfcncid,preid,lhid,uid,vid,wid,tid,qid,ppid,pbid,pblid,psfcid,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+		!----------------------------------------------------------------
+		! open all the netcdf data files and get the variable ids
+		!------------------------------------------------------------------
+
+		USE netcdf
+		USE util
+		USE global_data
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(OUT) :: ncid,prencid,lhncid,psfcncid !,uncid,vncid,wncid,tncid,qncid,ppncid,pblncid
+		INTEGER, INTENT(OUT) :: preid,lhid,uid,vid,wid,tid,qid,ppid,pbid,pblid,psfcid
+		CHARACTER(LEN=100), INTENT(IN) :: filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P
+
+		INTEGER :: status
+
+		! open the netcdf files - ATMOSPHERIC VARIABLES
+		status = NF90_OPEN(TRIM(dirdata_atm)//TRIM(filename_ext_atm), NF90_NOWRITE, ncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		! open the netcdf files - PRECIP
+		status = NF90_OPEN(TRIM(dirdata_land)//TRIM(filename_ext_RAIN), NF90_NOWRITE, prencid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		! open the netcdf files - EVAP
+		status = NF90_OPEN(TRIM(dirdata_land)//TRIM(filename_ext_LH), NF90_NOWRITE, lhncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		! open the netcdf files - SURFACE PRESSURE
+		status = NF90_OPEN(TRIM(dirdata_land)//TRIM(filename_ext_P), NF90_NOWRITE, psfcncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		!
+		!get ids for each variable
+		!
+		status = nf90_inq_varid(prencid, "RAIN", preid) 	! [mm]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(lhncid, "LH", lhid)			! [Wm-2] > converted to mm at end of get_data subroutine
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "U", uid)			! [ms-1]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "V", vid)			! [ms-1]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "W", wid)			! [ms-1]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "T", tid) 			! [K]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "QVAPOR", qid)			! [kgkg-1]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "P", ppid) 		! [Pa]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "PB", pbid) 		! [Pa]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "PBLH", pblid)		! [m]
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(psfcncid, "PSFC", psfcid)		! [Pa]
+		if(status /= nf90_NoErr) call handle_err(status)
+
+	END SUBROUTINE open_netcdf_files
+
+	!***********************************************************************
+
+	SUBROUTINE get_data(precip,evap,u,v,w,t,q,qc,qt,pp,pb,pbl_hgt,psfc,tcw)
+	!-----------------------------------------------
+	! read in the data for the first time
+	!-----------------------------------------------
+
+		USE global_data
+		USE util
+		USE netcdf
+
+		IMPLICIT NONE
+
+		REAL, DIMENSION(:,:,:) :: precip,evap,pbl_hgt,psfc
+		REAL, DIMENSION(:,:,:,:) :: u,v,w,t,q,qc,qt,pp,pb
+		REAL, DIMENSION(SIZE(u,1),SIZE(u,2),SIZE(u,3),datadaysteps) :: temp
+
+		!!! Not used for WRF
+		REAL, DIMENSION(:,:,:) :: tcw
+
+		CHARACTER(LEN=100) :: filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P
+
+		INTEGER :: ncid,prencid,lhncid,psfcncid
+		INTEGER :: preid,lhid,uid,vid,wid,tid,qid,ppid,pbid,pblid,psfcid
+		INTEGER :: sind,status,sind2,i,getsteps,getsteps2
+
+		REAL :: dayend
+
+		INTEGER :: jd_today,jd_before,new_y,new_m,new_d
+
+		!first get the qt
+		call get_data_mixtot(qc,qt)
+
+		call get_filename(day,mon,year,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+
+		!call open_netcdf_files(pncid,preid,lhid,uid,vid,wid,tid,qid,ppid,pbliqd,filename_ext)
+		call open_netcdf_files(ncid,prencid,lhncid,psfcncid,preid,lhid,uid,vid,wid,tid,qid,ppid,pbid,pblid,psfcid,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+
+		!if this is a day around a storm peak we want the half day after as well
+		if (peak) then
+			dayend = day + 0.5
+		else
+			dayend = day
+		end if
+
+		! Since our input files only consist of one day, open all timesteps (datadaysteps) in file (i.e. remove sind2, make it 1)
+
+		!!! SIM DAY SHOULD BE AT THE END OF THE ARRAY, DAY BEFORE JUST BEFORE THAT, ETC.
+		!!! LAST BACK-TRACKED DAY SHOULD BE AT THE START OF THE ARRAY.
+		!!! THE LAST TIME POSITION IN THE ARRAY SHOULD BE THE FIRST TIMESTEP OF SIM DAY + 1.
+
+		if (totbtadays>1) then
+			! Open the first day input file
+			status = nf90_get_var(prencid, preid, precip, &
+			start=(/bdy,bdy,1/),count=(/dim_j,dim_i,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			status = nf90_get_var(lhncid, lhid, evap(:,:,(datatotsteps-datadaysteps):(datatotsteps-1)), &
+			start=(/bdy,bdy,1/),count=(/dim_j,dim_i,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			status = nf90_get_var(ncid, qid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			q(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, uid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			u(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, vid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			v(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, wid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			w(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, tid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			t(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, ppid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			pp(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, pbid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			pb(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, pblid, pbl_hgt(:,:,(datatotsteps-datadaysteps):), &
+			start=(/bdy,bdy,1/),count=(/dim_j,dim_i,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			status = nf90_get_var(psfcncid, psfcid, psfc(:,:,(datatotsteps-datadaysteps):), &
+			start=(/bdy,bdy,1/),count=(/dim_j,dim_i,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			! close the netcdf files
+			status = nf90_close(ncid)
+			status = nf90_close(prencid)
+			status = nf90_close(lhncid)
+			status = nf90_close(psfcncid)
+
+			print *,'L948, Input file of first day loaded successfully:',filename_ext_atm
+
+			! Get julian day of current day
+			jd_today = julian(year,mon,day)
+			!print *,'L918, jd_today=',jd_today
+
+			! Get julian day for all other totbtadays and open the corresponding input files
+			do i = 1,totbtadays
+				jd_before = jd_today-i
+				! Convert julidan day to gregorian
+				call gregorian(jd_before,new_y,new_m,new_d)
+				!print *,'L909, jd_before,new_y,new_m,new_d=',jd_before,new_y,new_m,new_d
+				call get_filename(new_d,new_m,new_y,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+				call open_netcdf_files(ncid,prencid,lhncid,psfcncid,preid,lhid,uid,vid,wid,tid,qid,ppid,pbid,pblid,psfcid,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+
+				status = nf90_get_var(lhncid, lhid, evap(:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)), &
+				start=(/bdy,bdy,1/),count=(/dim_j,dim_i,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				status = nf90_get_var(ncid, qid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				q(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, uid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				u(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, vid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				v(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, wid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				w(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, tid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				t(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, ppid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				pp(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, pbid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				pb(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, pblid, pbl_hgt(:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)), &
+				start=(/bdy,bdy,1/),count=(/dim_j,dim_i,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				status = nf90_get_var(psfcncid, psfcid, psfc(:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)), &
+				start=(/bdy,bdy,1/),count=(/dim_j,dim_i,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				print *,'L1018, Input file of previous day loaded successfully:',i,filename_ext_atm
+
+				! close the netcdf files
+				status = nf90_close(ncid)
+				status = nf90_close(prencid)
+				status = nf90_close(lhncid)
+				status = nf90_close(psfcncid)
+
+			end do
+
+			! Get julian day for day after sim day (1st timestep needed) and open the corresponding input file
+			jd_before = jd_today+1
+			call gregorian(jd_before,new_y,new_m,new_d)
+			call get_filename(new_d,new_m,new_y,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+			call open_netcdf_files(ncid,prencid,lhncid,psfcncid,preid,lhid,uid,vid,wid,tid,qid,ppid,pbid,pblid,psfcid,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+
+			status = nf90_get_var(lhncid, lhid, evap(:,:,datatotsteps), &
+			start=(/bdy,bdy,1/),count=(/dim_j,dim_i,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			status = nf90_get_var(ncid, qid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			q(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, uid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			u(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, vid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			v(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, wid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			w(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, tid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			t(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, ppid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			pp(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, pbid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			pb(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, pblid, pbl_hgt(:,:,datatotsteps), &
+			start=(/bdy,bdy,1/),count=(/dim_j,dim_i,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			status = nf90_get_var(psfcncid, psfcid, psfc(:,:,datatotsteps), &
+			start=(/bdy,bdy,1/),count=(/dim_j,dim_i,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			! close the netcdf files
+			status = nf90_close(ncid)
+			status = nf90_close(prencid)
+			status = nf90_close(lhncid)
+			status = nf90_close(psfcncid)
+
+			print *,'L1100, Input file of next day (1st time step) loaded successfully:',filename_ext_atm
+
+		else
+			print*, 'If you only want to back-track for one day, must change how input data is retrieved.'
+
+		end if
+
+		!evap converted to mm > Unit conversion checked and OK 18/7/17 :)
+		evap = evap*(1440/datadaysteps)*60/Lv
+
+		qt = qt + q ! i.e. SUM(QCLD,QRAIN,QSNOW,QICE) + QVAPOUR
+		!qt = q
+		qc = qt
+
+	END SUBROUTINE get_data
+
+	!***********************************************************************
+
+	SUBROUTINE open_mixtot_netcdf_files(ncid,clwid,rnwid,snowid,iceid,filename_ext_atm)
+	!----------------------------------------------------------------
+	! open all the netcdf data files and get the variable ids
+	!------------------------------------------------------------------
+
+		USE netcdf
+		USE util
+		USE global_data
+
+		IMPLICIT NONE
+
+		INTEGER, INTENT(OUT) :: ncid !clwncid,rnwncid,snowncid,icencid
+		INTEGER, INTENT(OUT) :: clwid,rnwid,snowid,iceid
+		CHARACTER(LEN=100), INTENT(IN) :: filename_ext_atm
+
+		INTEGER :: status
+
+		! open the netcdf files - ATMOSPHERIC VARIABLES
+		status = NF90_OPEN(TRIM(dirdata_atm)//TRIM(filename_ext_atm), NF90_NOWRITE, ncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		!get ids for each variable
+		status = nf90_inq_varid(ncid, "QCLOUD", clwid)		! [kgkg-1]  ! QCLOUD
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "QRAIN", rnwid)		! [kgkg-1] ! QRAIN
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "QSNOW", snowid)		! [kgkg-1] ! QSNOW
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(ncid, "QICE", iceid)		! [kgkg-1] ! QICE
+		if(status /= nf90_NoErr) call handle_err(status)
+
+	END SUBROUTINE open_mixtot_netcdf_files
+
+	!***********************************************************************
+
+	SUBROUTINE get_data_mixtot(qc,qt)
+	!-----------------------------------------------
+	! read in the data for the first time
+	!-----------------------------------------------
+
+		USE global_data
+		USE util
+		USE netcdf
+
+		IMPLICIT NONE
+
+		REAL, DIMENSION(:,:,:,:) :: qc,qt
+
+		CHARACTER(LEN=100) :: filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P
+
+		REAL, DIMENSION(SIZE(qt,1),SIZE(qt,2),SIZE(qt,3),SIZE(qt,4)) :: clw,rnw,snow,ice
+		REAL, DIMENSION(SIZE(qt,1),SIZE(qt,2),SIZE(qt,3),datadaysteps) :: temp
+
+		INTEGER :: ncid
+		INTEGER :: clwid,rnwid,snowid,iceid
+		INTEGER :: sind,status,sind2,i,getsteps,getsteps2
+
+		REAL :: dayend
+
+		INTEGER :: jd_today,jd_before,new_y,new_m,new_d
+
+		call get_filename(day,mon,year,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+
+		call open_mixtot_netcdf_files(ncid,clwid,rnwid,snowid,iceid,filename_ext_atm)
+
+		!if this is a day around a storm peak we want the half day after as well
+		if (peak) then
+			dayend = day + 0.5
+		else
+			dayend = day
+		end if
+
+		!!! SIM DAY SHOULD BE AT THE END OF THE ARRAY, DAY BEFORE JUST BEFORE THAT, ETC.
+		!!! LAST BACK-TRACKED DAY SHOULD BE AT THE START OF THE ARRAY.
+		!!! THE LAST TIME POSITION IN THE ARRAY SHOULD BE THE FIRST TIMESTEP OF SIM DAY + 1.
+
+		! Since our input files only consist of one day, open all timesteps (datadaysteps) in file (i.e. remove sind2, make it 1)
+
+		! We want the event day + totbtadays before it
+
+		if (totbtadays>1) then
+			! Open the first day input file
+			status = nf90_get_var(ncid, clwid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			clw(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, rnwid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			rnw(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, snowid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			snow(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			status = nf90_get_var(ncid, iceid, temp(:,:,:,:), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			ice(:,:,:,(datatotsteps-datadaysteps):(datatotsteps-1)) = temp(:,:,dim_k:1:-1,:)
+
+			! close the netcdf file
+			status = nf90_close(ncid)
+
+			! Get julian day of current day
+			jd_today = julian(year,mon,day)
+
+			! Get julian/gregrorian day for all other totbtadays and open the corresponding input files
+			do i = 1,totbtadays
+				jd_before = jd_today-i
+				! Convert julian day to gregorian
+				call gregorian(jd_before,new_y,new_m,new_d)
+				call get_filename(new_d,new_m,new_y,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+				call open_mixtot_netcdf_files(ncid,clwid,rnwid,snowid,iceid,filename_ext_atm)
+
+				status = nf90_get_var(ncid, clwid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				clw(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, rnwid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				rnw(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, snowid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				snow(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				status = nf90_get_var(ncid, iceid, temp(:,:,:,:), &
+				start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,datadaysteps/))
+				if(status /= nf90_NoErr) call handle_err(status)
+
+				ice(:,:,:,datatotsteps-(datadaysteps*(i+1)):(datatotsteps-(datadaysteps*i)-1)) = temp(:,:,dim_k:1:-1,:)
+
+				! close the netcdf file
+				status = nf90_close(ncid)
+			end do
+
+			! Get julian day for day after sim day (1st timestep needed) and open the corresponding input file
+			jd_before = jd_today+1
+			call gregorian(jd_before,new_y,new_m,new_d)
+			call get_filename(new_d,new_m,new_y,filename_ext_atm,filename_ext_RAIN,filename_ext_LH,filename_ext_P)
+			call open_mixtot_netcdf_files(ncid,clwid,rnwid,snowid,iceid,filename_ext_atm)
+
+			status = nf90_get_var(ncid, clwid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			clw(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, rnwid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			rnw(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, snowid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			snow(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			status = nf90_get_var(ncid, iceid, temp(:,:,:,1), &
+			start=(/bdy,bdy,1,1/),count=(/dim_j,dim_i,dim_k,1/))
+			if(status /= nf90_NoErr) call handle_err(status)
+
+			ice(:,:,:,datatotsteps) = temp(:,:,dim_k:1:-1,1)
+
+			! close the netcdf file
+			status = nf90_close(ncid)
+
+			print *,'L1100, Input file of next day (1st time step) loaded successfully:',filename_ext_atm
+
+		else
+			print*, 'If you only want to back-track for one day, must change how input data is retrieved.'
+		end if
+
+		qc = clw + rnw + snow + ice
+		qt = qc
+
+	END SUBROUTINE get_data_mixtot
+
+	SUBROUTINE get_grid_data(ptop, delx, datatstep, lat2d, lon2d, extents)
+
+		USE global_data, ONLY: syear, smon, sday, dirdata_atm, totpts, bdy, dim_i, dim_j, dim_k, dim_i_start, dim_j_start, dim_k_start
+		USE util, ONLY: int_to_string, handle_err, all_positive_longitude
+		USE netcdf
+
+		IMPLICIT NONE
+
+		REAL,INTENT(OUT)              :: ptop, delx
+		INTEGER, INTENT(OUT)          :: datatstep
+		REAL,ALLOCATABLE,DIMENSION(:,:), INTENT(OUT) :: lat2d,lon2d
+		!!! extents does nothing for this verison of the subroutine
+		REAL,DIMENSION(6), INTENT(IN),OPTIONAL :: extents
+
+		!!! Locals
+		CHARACTER(LEN=100):: fname
+		INTEGER :: status, headncid, ptopid, delxid, latcrsid, loncrsid, tstepid
+		INTEGER :: fdim_i, fdim_j
+		REAL,ALLOCATABLE,DIMENSION(:,:) :: lon2d_corrected
+
+		write(fname,'(a,i4.4,a,i2.2,a,i2.2,a)') "wrfout_d01_",syear,"-",smon,"-",sday,"_00:00:00"
+		print *,'Get header info from first input file: ',fname
+		status = NF90_OPEN(TRIM(dirdata_atm)//fname, NF90_NOWRITE, headncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		!----------------------------------------------------------------
+		! Get ids for required variables from header
+
+		status = nf90_inq_varid(headncid, "P_TOP", ptopid)  !top pressure in model (Pa)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inquire_attribute(headncid, nf90_global, "DX", delxid)  !grid distance (m)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(headncid, "XLAT", latcrsid)  !latitudes of grid points (degrees)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_varid(headncid, "XLONG", loncrsid)  !longitudes of grid points (degrees)
+		if(status /= nf90_NoErr) call handle_err(status)
+		! status = nf90_inq_varid(headncid, "HGT", terid)  !model terrain (m)
+		! if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inq_dimid(headncid, "Time", tstepid)  !number of time steps in file
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		!----------------------------------------------------------------
+		! Read in 1d variables
+
+		status = nf90_get_var(headncid, ptopid, ptop)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_att(headncid, NF90_GLOBAL, "DX",delx)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_inquire_dimension(headncid, tstepid,len = datatstep)
+		datatstep=1440/datatstep ! Value must be 1440/8=180, where 8 is number of timesteps in the file (it was set up this way based on MM5 input files, where MM5 model timestep was 180mins)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_att(headncid, NF90_GLOBAL, "SOUTH-NORTH_GRID_DIMENSION", fdim_i)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_att(headncid, NF90_GLOBAL, "WEST-EAST_GRID_DIMENSION", fdim_j)
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_att(headncid, NF90_GLOBAL, "BOTTOM-TOP_GRID_DIMENSION", dim_k)
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		dim_k=dim_k-1
+
+		!switch from dots to crosses
+		fdim_i = fdim_i-1
+		fdim_j = fdim_j-1
+
+		!get i and j dimensions when ignoring the boundaries
+		dim_i = fdim_i - 2*(bdy-1)
+		dim_j = fdim_j - 2*(bdy-1)
+
+		!Total number of grid pts inside boundaries
+		totpts = (dim_j-2)*(dim_i-2)
+
+		! Allocate the required arrays
+		ALLOCATE( lon2d(dim_j,dim_i),lat2d(dim_j,dim_i), STAT = status)
+		!sigma(dim_k),pstar(dim_j,dim_i,datadaysteps), terrain(dim_j,dim_i)
+
+		!
+		! Read in more variables
+		!
+		status = nf90_get_var(headncid, latcrsid, lat2d,start=(/bdy,bdy/),count=(/dim_j,dim_i/))
+		if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_get_var(headncid, loncrsid, lon2d,start=(/bdy,bdy/),count=(/dim_j,dim_i/))
+		if(status /= nf90_NoErr) call handle_err(status)
+		! status = nf90_get_var(headncid, terid, terrain,start=(/bdy,bdy/),count=(/dim_j,dim_i/))
+		! if(status /= nf90_NoErr) call handle_err(status)
+		status = nf90_close(headncid)
+
+		!--------------------------------------------------------
+		!Model expects data to range between 0deg and 360deg. Narclim/WRF 2d longitude ranges between -180deg and +180deg. Where the longitude is negative, add 360deg. Replace the raw longitude 2d grid with the corrected one.
+		ALLOCATE(lon2d_corrected(dim_j,dim_i))
+
+		call all_positive_longitude(lon2d,lon2d_corrected)
+
+		lon2d=lon2d_corrected
+
+		dim_i_start = bdy
+		dim_j_start = bdy
+		dim_k_start = 1
+
+	END SUBROUTINE get_grid_data
+
+	SUBROUTINE get_watershed(wsmask)
+
+		USE global_data, ONLY: bdy, diri, fwshed, dim_i, dim_j, dim_i_start, dim_j_start
+		USE util, ONLY: handle_err
+		USE netcdf
+
+		IMPLICIT NONE
+
+		INTEGER, ALLOCATABLE, DIMENSION(:,:), INTENT(OUT) :: wsmask
+
+		!!! Locals
+		CHARACTER(len=100) :: fname
+		INTEGER            :: status
+		INTEGER            :: wsncid, wsid
+
+		fname=TRIM(diri)//"watershed/"//TRIM(fwshed)
+
+		print *,'using wshed from',fname
+		ALLOCATE( wsmask(dim_j,dim_i), STAT = status )
+		status = NF90_OPEN(fname, NF90_NOWRITE, wsncid)
+		if (status /= NF90_NOERR) call handle_err(status)
+
+		status = nf90_inq_varid(wsncid, "wsmask", wsid)  !watershed mask
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		status = nf90_get_var(wsncid, wsid, wsmask,start=(/dim_j_start,dim_i_start/),count=(/dim_j,dim_i/))
+		if(status /= nf90_NoErr) call handle_err(status)
+
+		status = nf90_close(wsncid)
+
+	END SUBROUTINE
+
+END MODULE input_data_handling_wrf
 
 !***********************************************************************
 !***********************************************************************
@@ -2255,9 +3117,9 @@ MODULE input_data_handling_era5
 
 
 		if( present(extents) ) then
-			call array_extents(lat1d, extents(1),extents(2),dim_i_start,dim_i_end,reverse=.true.)
-			call array_extents(lon1d, extents(3),extents(4),dim_j_start,dim_j_end,periodic=.true.)
-			call array_extents(levels,extents(5),extents(6),dim_k_start,dim_k_end)
+			call array_extents(lat1d, extents(1),extents(2),dim_i_start,dim_i_end,reverse=.true.,periodic=.false.)
+			call array_extents(lon1d, extents(3),extents(4),dim_j_start,dim_j_end,reverse =.false.,periodic=.true.)
+			call array_extents(levels,extents(5),extents(6),dim_k_start,dim_k_end,reverse=.false.,periodic=.false.)
 			dim_i_start = dim_i_start + bdy
 			dim_j_start = dim_j_start + bdy
 			dim_i_end   = dim_i_end - bdy
@@ -2360,17 +3222,17 @@ print *, 'dim_k_start,dim_k_end,ptop',dim_k_start,dim_k_end,ptop
 	!!! Future TO-DO - rewrite this and get_data to open each era5 file only once
 	!!! Future TO-DO - rewrite this to use a rolling window to avoid re-reading over
 	!!!                back trajectory days
-	SUBROUTINE get_data_mixtot(qc,qt)
+	SUBROUTINE get_data_mixtot(qc)
 
 		USE global_data, ONLY: peak, datatotsteps, datadaysteps, dim_i, dim_j, dim_k, dim_i_start, dim_j_start, dim_k_start, day, mon, year, water_density, totbtadays, sday
 		USE util, ONLY: julian, gregorian, month_end
 
 		IMPLICIT NONE
 
-		REAL, DIMENSION(:,:,:,:) :: qc,qt
+		REAL, DIMENSION(:,:,:,:) :: qc
 
 		!!! Locals
-		REAL, DIMENSION(SIZE(qt,1),SIZE(qt,2),SIZE(qt,3),SIZE(qt,4)) :: clw,rnw,snow,ice
+		REAL, DIMENSION(SIZE(qc,1),SIZE(qc,2),SIZE(qc,3),SIZE(qc,4)) :: clw,rnw,snow,ice
 		INTEGER :: jd_today, jd_before
 		INTEGER :: new_y, new_m, new_d
 		INTEGER :: i
@@ -2417,7 +3279,6 @@ print *, 'dim_k_start,dim_k_end,ptop',dim_k_start,dim_k_end,ptop
 		end if
 
 		qc = clw + rnw + snow + ice
-		qt = qc
 
 		print *, 'finished getting data mixtot'
 		!print *, 'ice(1,1,1,:)', ice(1,1,1,:)
@@ -2447,7 +3308,7 @@ print *, 'dim_k_start,dim_k_end,ptop',dim_k_start,dim_k_end,ptop
 		CHARACTER(len=100) :: fname
 		REAL, ALLOCATABLE, DIMENSION(:) :: levels
 
-		call get_data_mixtot(qc,qt)
+		call get_data_mixtot(qc)
 
 		!if this is a day around a storm peak we want the half day after as well
 		if (peak) then
@@ -2518,9 +3379,8 @@ print *, 'dim_k_start,dim_k_end,ptop',dim_k_start,dim_k_end,ptop
 		! J/s/m2 * kg/J [1/Lv] * m3/kg [1/water density] * 60*60 [sec] * 1000 [mm] >> mm over the hourly data timestep
 		evap = evap*1/Lv*1/water_density*60*60*1000 ! mm over the hour data timestep
 
-		qt = qt + q ! i.e. SUM(QCLD,QRAIN,QSNOW,QICE) + QVAPOUR
-		!qt = q
-		qc = qt
+		qt = qc + q ! i.e. SUM(QCLD,QRAIN,QSNOW,QICE) + QVAPOUR
+
 
 		!!! Pressure is special, derive it from a coordinate
 		write(fname,'(a,i4.4,a)') TRIM(dirdata_era5)//"pressure-levels/reanalysis/q/",syear,"/q_era5_oper_pl_"//to_iso_date(syear,smon,1)//"-"//to_iso_date(syear,smon,month_end(syear,smon))//".nc"
@@ -2571,7 +3431,7 @@ PROGRAM back_traj
 	USE omp_lib
 
 
-	USE input_data_handling_era5, ONLY: get_grid_data, get_data, get_watershed
+	USE input_data_handling_era5, ONLY: get_grid_data, get_data,get_data_mixtot,get_watershed !!!changed
 
 
 	IMPLICIT NONE
@@ -2597,12 +3457,13 @@ PROGRAM back_traj
 	REAL,ALLOCATABLE,DIMENSION(:,:,:,:) :: unow,vnow,wnow
 	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: pres_then,tempnow
 	!REAL,ALLOCATABLE,DIMENSION(:,:,:) :: pot_temp_then !
-	REAL,ALLOCATABLE,DIMENSION(:,:) :: psfc_then
+	REAL,ALLOCATABLE,DIMENSION(:,:) :: psfc_then,evapnow
     INTEGER,ALLOCATABLE,DIMENSION(:,:,:) :: pbl_lev
 
+	INTEGER,ALLOCATABLE,DIMENSION(:) :: par_release
 	INTEGER :: xx,yy,tt,nn,mm,npar,orec,x,y,ttdata,nnMM5,ttdataday
-	INTEGER :: xx_omp,threadnum,torec
-	REAL :: ttfac,nnfac,precip_here,wv_fac
+	INTEGER :: xx_omp,torec
+	REAL :: ttfac,nnfac,precip_here,qfac_evap,qfac_pbl
 
 	INTEGER,ALLOCATABLE,DIMENSION(:,:) :: wsmask
 
@@ -2612,11 +3473,19 @@ PROGRAM back_traj
 
 	LOGICAL :: print_test
 
+	REAL,ALLOCATABLE,DIMENSION(:,:) :: randnums_t
+	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: randnums_h
+
 	!I want dd and totpts to persist inside and outside parallel regions and subroutines
 	!so they have been added to the global_data module and declared threadprivate
 
 	!for outputting the parcel stats for each parcel
 	REAL,ALLOCATABLE,DIMENSION(:,:) :: parcel_stats
+
+	INTEGER,ALLOCATABLE,DIMENSION(:) :: xx_all,yy_all
+	REAL,ALLOCATABLE,DIMENSION(:) :: pre_all
+	REAL,ALLOCATABLE,DIMENSION(:,:,:) :: WV_cont_all 
+
 
 
 	!----------------------------------------------------------------
@@ -2625,6 +3494,7 @@ PROGRAM back_traj
 	INTEGER :: num_args
 	character(len=100), dimension(:), allocatable :: args
 	num_args = command_argument_count()
+	print*,num_args
 	allocate(args(num_args))  ! I've omitted checking the return status of the allocation
 
 	call get_command_argument(1,args(1))
@@ -2642,7 +3512,16 @@ PROGRAM back_traj
 	call get_command_argument(7,args(7))
 	diro = args(7)
 
+	! sday = 25
+	! smon = 2
+	! syear = 2022
+	! edday = 26
+	! edmon = 2
+	! edyear =2022
+	! diro = "/scratch/w40/ym7079/GPU_test1206/"
+
 	print *,"Results saved to: ",diro
+
 
 	! Find total number of days to run simulation for, given input start and end dates
 	totdays=simlength(sday,smon,syear,edday,edmon,edyear)
@@ -2658,9 +3537,9 @@ PROGRAM back_traj
 	!!! Note that values in the extents array MUST match coord points in the data       
         !!! extents = (/ start_lat, end_lat, start_lon, end_lon, start_level, end_level /) levels in hPa
         !Australia Case 
-	!call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -50.5, 0.5, 89.75, -130.0, 100.0, 1000.0 /) )
+	call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -60., 10., 85., -150., 1.,1000. /) )
         !Pakistan case
-    call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -60., 10., 85., -150., 1.,1000. /) )
+    !call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ -5., 85., -150., 120., 1.,1000. /))
         !Scotland case
         !call get_grid_data(ptop, delx, datatstep, lat2d, lon2d, (/ 20., 85., -180., 120., 100., 1000. /) )
 	!--------------------------------------------------------
@@ -2700,9 +3579,9 @@ PROGRAM back_traj
 
 	! Total number of grid pts inside boundaries
 	totpts = (dim_j-2)*(dim_i-2)
+	npar = nparcels
 
 	! Set the number of threads to use in the parallel sections
-	call OMP_SET_NUM_THREADS(numthreads)
 
 	! Allocate the variable arrays
 	ALLOCATE( precip(dim_j,dim_i,datadaysteps), &
@@ -2710,27 +3589,30 @@ PROGRAM back_traj
 		tpw(dim_j,dim_i,datatotsteps),   &
 		surf_pres(dim_j,dim_i,datatotsteps),   &
 		pbl_hgt(dim_j,dim_i,datatotsteps),   &
-		pbl_lev(dim_j,dim_i,datatotsteps),  &
-		psfc(dim_j,dim_i,datatotsteps),  &
-		tcw(dim_j,dim_i,datatotsteps),  &
+		pbl_lev(dim_j,dim_i,datatotsteps),   &
+		psfc(dim_j,dim_i,datatotsteps),   &
+		tcw(dim_j,dim_i,datatotsteps),   &
 		u(dim_j,dim_i,dim_k,datatotsteps), &
 		v(dim_j,dim_i,dim_k,datatotsteps), &
 		w(dim_j,dim_i,dim_k,datatotsteps), &
 		temp(dim_j,dim_i,dim_k,datatotsteps), &
 		act_temp(dim_j,dim_i,dim_k,datatotsteps), &
-		!pot_temp(dim_j,dim_i,dim_k,datatotsteps), &
+		! pot_temp(dim_j,dim_i,dim_k,datatotsteps), &
 		mix(dim_j,dim_i,dim_k,datatotsteps), &
 		pp(dim_j,dim_i,dim_k,datatotsteps), &
 		pb(dim_j,dim_i,dim_k,datatotsteps), &
 		mixtot(dim_j,dim_i,dim_k,datatotsteps), &
-		pw(dim_j,dim_i,dim_k,daytsteps+1), &  !Yinglin: why daytsteps+1
+		pw(dim_j,dim_i,dim_k,daytsteps+1), &
 		mixcld(dim_j,dim_i,dim_k,datatotsteps), &
 		pres(dim_j,dim_i,dim_k,datatotsteps), &
+		randnums_t(totpts,npar),&  !new_added    ALLOCATE(randnums_t(npar),randnums_h(daytsteps,npar),STAT = status)
+		randnums_h(totpts,daytsteps,npar), & !new_added
 		STAT = status )
 
 	!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 	! FOR EVERY DAY OF THE SIMULATION PERIOD
 	!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 
 	do dd = 1, totdays
 
@@ -2776,24 +3658,8 @@ PROGRAM back_traj
 		! Note that pw has an extra timestep in length, to allow the lin_interp_inMM5tsteps(pw) to interpolate between 2 values at the end.
 		call calc_pw(mixtot(:,:,:,datatotsteps-datadaysteps:),pres(:,:,:,datatotsteps-datadaysteps:),surf_pres(:,:,datatotsteps-datadaysteps:),ptop,pw)
 
-
 		! Calculate the total precipitable water (lat,lon,time).
 		call calc_tpw(mixtot,pres,surf_pres,ptop,tpw)
-
-        ! Check how tpw in the PBL differs
-        !call calc_tpw_pbl(mixtot,pres,surf_pres,tpw,pbl_lev)
-
-        !print *, 'evap(1,1,:10)',evap(1,1,:10)
-        !print *, 'tpw(1,1,:10)',tpw(1,1,:10)
-        !print *, 'pres(1,1,:,2)',pres(1,1,:,2)
-        !print *, 'psfc(1,1,2)',psfc(1,1,2)
-        !print *, 'tcw(1,1,:10)',tcw(1,1,:10)
-        !print *, 'pw(1,1,:,2)',pw(1,1,:,2)
-        !print *, 'u(1,1,:,2)',u(1,1,:,2)
-        !print *, 'v(1,1,:,2)',v(1,1,:,2)
-        !print *, 'w(1,1,:,2)',w(1,1,:,2)
-        !print *, 'pbl_lev(1,1,:10)',pbl_lev(1,1,:10)
-        !print *, 'lon2d(:,1)',lon2d(:,1)
 
 
 		! Calculate the subsection x & y dimensions, based on the max distance a parcel can travel in the sim timestep
@@ -2801,115 +3667,89 @@ PROGRAM back_traj
 
 		!loop over x and y grid points
 		!
+		ALLOCATE( WV_cont_all(dim_j,dim_i,totpts),xx_all(totpts),yy_all(totpts),pre_all(totpts), STAT = status)
+		WV_cont_all = 0.
+		xx_all = 0.
+		yy_all = 0.
+		pre_all = 0.
 
-		!parallelize over the grid points
-		!ie each grid point will be sent to a new thread
-		!program will wait until all grid points are complete before
-		!moving on to next day
+		print *, 'Starting parallelisation'
+		!allocate these arrays for each thread
+		ALLOCATE( WV_cont(dim_j,dim_i),WV_cont_day(dim_j,dim_i), &
+				WV_cont_apbl(dim_j,dim_i),WV_cont_day_apbl(dim_j,dim_i), &
+				unow(ssdim,ssdim,dim_k,2),vnow(ssdim,ssdim,dim_k,2), &
+				par_release(daytsteps), &
+				!pot_temp_then(ssdim,ssdim,dim_k), &
+				pres_then(ssdim,ssdim,dim_k),wnow(ssdim,ssdim,dim_k,2), &
+				psfc_then(ssdim,ssdim),tempnow(ssdim,ssdim,dim_k), &
+				STAT = status)
 
-		!it remains unclear to me but it seems that I have to include
-		!all calls to subroutines in critical sections even when they
-		!don't do anything like changing values of shared variables etc
-		!I can't actually find documentation to confirm this but it doesn't
-		!seem to work otherwise!!!????
+		call RANDOM_NUMBER(randnums_t)
+		call RANDOM_NUMBER(randnums_h)
+
+		print*,'MAXVAL(randnums_t),MINVAL(randnums_t)',MAXVAL(randnums_t),MINVAL(randnums_t)
+		print*,'MAXVAL(randnums_h),MINVAL(randnums_h)',MAXVAL(randnums_h),MINVAL(randnums_h)
+		print*, 'wmax,wmin',MAXVAL(w),MINVAL(w)
+		print*, 'tempmax,tempmin',MAXVAL(act_temp),MINVAL(act_temp)
 
 
 		!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 		! FOR EVERY POINT IN THE GRID
 		!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-		print *, 'Starting parallelisation'
+		!$acc data copyin(WV_cont_all,xx_all,yy_all,pre_all,pw,tpw,u,v,w,pres,psfc,evap,precip,mixtot,lat2d,lon2d,wsmask,daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,totpts,ssdim,dd,orec,randnums_t,randnums_h)  &
+		!$acc create(WV_cont,WV_cont_day,xx,yy,ttdataday,ttdata,ttfac,unow,vnow,wnow,pres_then,psfc_then,ssx,ssy,nnMM5,nnfac,par_lon,par_lat,par_lev,par_pres,par_q,new_par_q,qfac_evap,x,y,xx_omp,tt,mm,nn,par_release)   &
+    	!$acc copyout(WV_cont_all,xx_all,yy_all,pre_all)
+		!!$acc data copyin(precip) &
+		!!$acc create(precip_sum,tt) &
+		!!$acc copyout(precip_sum)
+		!$acc kernels
+		do xx_omp = 0, totpts-1
 
+			xx = 2 + INT(REAL(xx_omp)/REAL((dim_i-2)))  		!xx = 2 + INT(xx_omp*1./(dim_i-2)) 	
+			yy = 2 + (xx_omp - (xx-2)*(dim_i-2)) 	
 
-		!$acc data copyin(pw,tpw,u,v,w,pres,act_temp,surf_pres,evap,precip,mix,mixtot,lat2d,lon2d,orec,wsmask,daytsteps,totsteps,indatatsteps,datadaysteps,datatotsteps,dim_i,dim_j,dim_k,xx,yy,dd,totpts,ssdim)&
-		!$acc create(WV_cont,WV_cont_day,unow,vnow,wnow,pres_then,psfc_then,tempnow,xx_omp,tt,mm,nn,x,y,par_lev,par_pres,par_q,ssx,ssy,par_lat,par_lon,nnMM5,nnfac,wv_fac,new_par_q,ttfac,ttdata,ttdataday)&
-		!$acc copyout(WV_cont_day)
-		!$acc PARALLEL LOOP &
-		!$acc PRIVATE(WV_cont,WV_cont_day,unow,vnow,wnow,pres_then,psfc_then,tempnow,xx_omp,tt,mm,nn,x,y,par_lev,par_pres,par_q,ssx,ssy,par_lat,par_lon,nnMM5,nnfac,wv_fac,new_par_q,ttfac,ttdata,ttdataday)
+			print*,'xx_omp,xx,yy,lat,lon,SUM(precip(xx,yy,:))',xx_omp,xx,yy,lat2d(xx,yy),lon2d(xx,yy),SUM(precip(xx,yy,:))
 
-		do xx_omp = 0,totpts-1
-
-
-		if (eachParcel) then
-			ALLOCATE(parcel_stats(14,totsteps), STAT = status)
-		end if
-
-			xx = 2 + AINT(xx_omp*1./(dim_i-2))
-			yy = 2 + (xx_omp - (xx-2)*(dim_i-2))
-
-			!threadnum = OMP_GET_THREAD_NUM()
-			!threadnum = 0
 
 			! Only do something if within watershed, if we care about the watershed
 			if (wshed) then
 				if (wsmask(xx,yy)==0) CYCLE
 			end if
 
+			WV_cont_day = 0.
 			! Only do something if rain fell at this point on this day
 			if (SUM(precip(xx,yy,:))>minpre) then
 				
-				orec = orec + 1
-				!orec = orec   !!! Yinglin: no need I think
-    
-				! *Output results per parcel can be specified here.*
-				if (eachParcel) then
-				OPEN(unit=threadnum+10,file=TRIM(diro)//"parcel"//TRIM(int_to_string(dd))//"_"//TRIM(int_to_string(orec)), &
-					form="UNFORMATTED",status="REPLACE") 
-				!print *,threadnum+10
-				end if 
-				WV_cont_day = 0.
-				!WV_cont_day_apbl = 0.
+				!WV_cont_day = 0. ! move this outside of the if/ else strcture
 
-				!
-				! Determine how many parcels to release today and use precip
-				! distribution to determine when to release parcels.
-				! The globally set nparcels is just a maximum number of parcels
-				! to release in each data timestep. We release at least one parcel
-				! per simulation timestep within a data time step when it rained.
-				! npar calculates how many parcels to release that day. parcel_release_time
-				! spreads that number of parcels out of the 144 timesteps depending on
-				! when it rained.
-				!
-				!call parcel_release_time_non_random(pre ,par_release)  !!! Yinglin 
+				!par_release = 0
 
-
-				! if (COUNT(MASK = precip(xx,yy,:)>0.)<(nparcels/indatatsteps)) then
-				! 	npar = COUNT(MASK = precip(xx,yy,:)>0.) * indatatsteps
-				! 	call parcel_release_time(precip(xx,yy,:),npar,par_release)
-				! else
-				! 	npar = nparcels
-				! 	call parcel_release_time(precip(xx,yy,:),npar,par_release)
-				! end if
-				!---------Yinglin:if we use fixed release time, fixed release height, the part below is not needed----------
-				!npar = 10*COUNT(MASK = precip(xx,yy,:)>0.)
-				!print*,'npar',npar
-				!call parcel_release_time(precip(xx,yy,:),npar,par_release) ! not surported in openacc
+				npar = nparcels
+				
+				call parcel_release_time(precip(xx,yy,:),randnums_t(xx_omp,:),par_release)
 
 				! * Parcel release height can be set here if you want to remove randomness.*
 
 				!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 				! FOR EVERY SIMULATION SUB-DAILY TIMESTEP
 				!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
+				!$acc loop independent
 				do tt = 1, daytsteps
-					!if (par_release(tt)==0) then
-					!	CYCLE
-					!end if
-
+					if (par_release(tt)==0) then
+						CYCLE
+					end if
 
 					!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 					! FOR EVERY LOT OF PARCELS
 					!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-					!do mm = 1, par_release(tt)
-					do mm = 1, dim_k       !!!Yinglin: need to consider if the surface face 
-
-						if (pw(xx,yy,mm,tt)<0) then
-							CYCLE
-						end if
+					!print*,'par_release(tt)',par_release(tt)
+					!$acc loop independent
+					do mm = 1, par_release(tt)
 
 						WV_cont = 0.
 						!WV_cont_apbl = 0.
-						wv_fac = 1.
+						qfac_evap = 1.
+						!qfac_pbl =1
 						x = xx
 						y = yy
 
@@ -2923,30 +3763,18 @@ PROGRAM back_traj
 						ttfac = MOD(tt,indatatsteps)*1./indatatsteps
 
 						!the precip produced here at this parcel time step
-						!end_precip = precip(xx,yy,ttdataday)/indatatsteps  !!!Yinglin: not used
+						end_precip = precip(xx,yy,ttdataday)/indatatsteps
 
 						!determine model level from which to release parcel
 
-						!call parcel_release_height(pw(xx,yy,:,tt),par_lev)
-						par_lev = mm
-						!print *,'psfc ',surf_pres(xx,yy,tt)
-                        !par_lev = 35 ! this is 950hPa when loading all ERA5 model levels
+						call parcel_release_height(pw(xx,yy,:,tt),randnums_h(xx_omp,tt,mm),par_lev)
 
-						!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-						!release the parcel and track the back trajectory
-						!until all of initial precipitable water is accounted for
-						!or the parcel leaves the domain
-						!or the user specified time to calculate the back trajectory runs out
-						!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-						!
 						! We always release parcels from the centre of the grid cell. I think this differs to D&B: See D&B 2007 Figure 1.
 						par_lat = lat2d(xx,yy)
 						par_lon = lon2d(xx,yy)
 
 						! Calculate the parcel mixing ratio. This is used in the calculation of new parcel level in new_parcel_level_w.
 						par_q = lin_interp(mixtot(xx,yy,par_lev,ttdata:ttdata+1),ttfac)
-
-						! * Parcel potential temperature was calculated here.*
 
 						! Calculate parcel pressure.This is used in the calculation of new parcel level in new_parcel_level_w.
 						par_pres = lin_interp(pres(xx,yy,par_lev,ttdata:ttdata+1),ttfac)
@@ -2955,28 +3783,9 @@ PROGRAM back_traj
 						! FOR EACH PARCEL RELEASE TIME, FOR EACH SIMULATION TIME STEP IN THE
 						! WHOLE BACK-TRACK PERIOD
 						!%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+						!$acc loop seq
 						do nn = totsteps-daytsteps+tt, 2, -1
-							!
-							!advect the parcel back in time one step
-							!
-                            !current parcel stats
-                            if (eachParcel) then
-                                !print *,"nn ",nn,threadnum,par_lev
-                                parcel_stats(1,totsteps-daytsteps+tt+1-nn) = nn*1.
-                                parcel_stats(2,totsteps-daytsteps+tt+1-nn) = xx
-                                parcel_stats(3,totsteps-daytsteps+tt+1-nn) = yy
-                                parcel_stats(4,totsteps-daytsteps+tt+1-nn) = par_lon
-                                parcel_stats(5,totsteps-daytsteps+tt+1-nn) = par_lat
-                                parcel_stats(6,totsteps-daytsteps+tt+1-nn) = par_pres
-                                parcel_stats(7,totsteps-daytsteps+tt+1-nn) = par_lev
-                                parcel_stats(8,totsteps-daytsteps+tt+1-nn) = par_q
-                                parcel_stats(9,totsteps-daytsteps+tt+1-nn) = u(x,y,par_lev,ttdata)
-                                parcel_stats(10,totsteps-daytsteps+tt+1-nn) = v(x,y,par_lev,ttdata)
-                                parcel_stats(11,totsteps-daytsteps+tt+1-nn) = w(x,y,par_lev,ttdata)
-                            end if
-							!
-							!calculate the lower left location for the subsection
-							!
+	
 							if (x+floor(ssdim/2.)>dim_j) then
 								ssx = dim_j - ssdim + 1
 							else
@@ -2993,9 +3802,6 @@ PROGRAM back_traj
 							nnMM5 = INT(nn/indatatsteps) + 1
 							nnfac = MOD(nn,indatatsteps)*1./indatatsteps
 
-							!
-							!get u,v and temp for this and the previous parcel time step (just subsection)
-							!
 							unow(:,:,:,2) = lin_interp3D(u(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
 
 							vnow(:,:,:,2) = lin_interp3D(v(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
@@ -3004,7 +3810,6 @@ PROGRAM back_traj
 
 							! The temperature (now) is used to determine the temperature of the parcel before it's advected. (The initial pressure of the parcel was already calculated before nn. Subsequent parcel pressures, as the parcel is moved backward in each time step, are determined within the back-trajectory routine, or more specifically, during the routine to determine the parcel's new height (i.e. pressure).)
 							tempnow(:,:,:) = lin_interp3D(act_temp(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
-
 
 							! Find where you are in the nn timeseries
 							nnMM5 = INT((nn-1)/indatatsteps) + 1
@@ -3016,97 +3821,40 @@ PROGRAM back_traj
 
 							wnow(:,:,:,1) = lin_interp3D(w(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
 
-							!!$OMP CRITICAl (pot_temp2)
-							!pot_temp_then(:,:,:) = lin_interp3D(pot_temp(ssx:ssx+ssdim,ssy:ssy+ssdim,:,nnMM5:nnMM5+1),nnfac)
-							!!$OMP END CRITICAl (pot_temp2)
 
 							pres_then(:,:,:) = lin_interp3D(pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,:,nnMM5:nnMM5+1),nnfac)
 
 							psfc_then(:,:) = lin_interp2D(surf_pres(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1,nnMM5:nnMM5+1),nnfac)
 
-							! SPECIFY WHICH VERSION OF THE BACK-TRAJECTORY YOU WANT TO USE
-							! Here parcels move with vertical wind speed (w) and have their new pressures calculated using actual temp
-
-							call implicit_back_traj_w(unow,vnow,wnow,tempnow,pres_then,psfc_then,lon2d(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1),lat2d(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1),par_lon,par_lat,par_lev,par_pres,par_q,threadnum)
+							call implicit_back_traj_w(unow,vnow,wnow,tempnow,pres_then,psfc_then,lon2d(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1),lat2d(ssx:ssx+ssdim-1,ssy:ssy+ssdim-1),par_lon,par_lat,par_lev,par_pres,par_q)
 
 							! Find the grid cell nearest the new lat,lon of the parcel
 
 							! While in the first time step the parcel x,y may be the same cell as the parcel was released from, as you back-track that parcel in time the x,y will change.
 							call near_pt(lon2d,lat2d,par_lon,par_lat,x,y)
 
-
 							! Find the water mass contribution of the new grid square, at this time	      !
 							new_par_q = lin_interp(mixtot(x,y,par_lev,nnMM5:nnMM5+1),nnfac)
-							!
-							!adjust the q reduction factor if we had a decrease in q
-							!so long as it isn't the first time step.
-							! i.e. If the amount of water in the atmosphere at the parcel position decreases backward in time, then the parcel q at the current time step must not have come from the cell evap...maybe from some other process like convection.
-							!
-
-
-                            !! TO DO - create user setting whether you want to split the PBL or not
-                            
-                            !was moisture contributed to the parcel?
-							!is the parcel in the pbl?
-                            ! Unlike WRF, ERA5 evap and twp units are consistent, so no need to divde by indatatsteps.   
+ 
 
 							!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
-
-							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
-								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))*wv_fac
-								if (nn < totsteps-daytsteps+tt) then
-									wv_fac = wv_fac*(1-(lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
-									/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac))))
-								end if
-							end if
-							!else
-    						!	if (par_q < new_par_q-min_del_q) then
-    						!	    WV_cont_apbl(x,y) = WV_cont_apbl(x,y) + ((new_par_q - par_q)/par_q)*qfac
-    						!	end if
-							!end if
+    							if (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) > 0.) then
+    								WV_cont(x,y) = WV_cont(x,y) + (lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac) &
+    										/ (indatatsteps*lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))*qfac_evap
+									print*,'WV_cont(x,y)',WV_cont(x,y)
+									if (nn < totsteps-daytsteps+tt) then										
+										qfac_evap = qfac_evap*(1-lin_interp(evap(x,y,nnMM5:nnMM5+1),nnfac)/(indatatsteps * lin_interp(tpw(x,y,nnMM5:nnMM5+1),nnfac)))
+									end if
+    							end if
 
 							par_q = new_par_q
 
-                            !saving parcel stats
-                            if (eachParcel) then
-                                parcel_stats(12,totsteps-daytsteps+tt+1-nn) = evap(x,y,ttdata)
-                                parcel_stats(13,totsteps-daytsteps+tt+1-nn) = tpw(x,y,ttdata)
-                                parcel_stats(14,totsteps-daytsteps+tt+1-nn) = WV_cont(x,y)
-                            end if
-              
-							!
-							!if we have accounted for all the precip  then go to next parcel
-							!
+
 							!if (SUM(WV_cont + WV_cont_apbl)>=1.) then
 							if (SUM(WV_cont)>=1.) then
-								!print *,"all precip accounted (torec,wv_cont) ",torec,SUM(WV_cont + WV_cont_apbl)
-								!if (par_lev >= pbl_lev(x,y,nnMM5+1)) then
 								WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont) - 1)
-    							!	WV_cont(x,y) = WV_cont(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
-								!else
-    							!	WV_cont_apbl(x,y) = WV_cont_apbl(x,y) - (SUM(WV_cont+WV_cont_apbl) - 1)
-								!end if
 								EXIT
 							end if
-
-							!
-							!if qfac = 0 then all of the increases in the water vapor
-							!further back along the trajectory are lost before reaching
-							!the end precipitation point so they don't contribute and
-							!there is no need to continue
-							!
-							!the water not accounted for must have come from convection
-							!or some other process that remains unaccounted for
-							!
-							! if (qfac==0) then
-							! 	EXIT
-							! end if
-
-							!if we have left the domain then assign the remaining precip to
-							!outside and go to next parcel
-
-       !!! This sction needs modifying if splitting PBL
 							!
 							if (x<2) then
 								WV_cont(1,y) = 1. - SUM(WV_cont)
@@ -3123,10 +3871,6 @@ PROGRAM back_traj
 								EXIT
 							end if
 
-							!
-							!if we have reached here and nn=2 then we have neither left the
-							!domain nor acounted for the precip in the allocated back-track period (didn't go back far enough in time).
-							!
 							if (nn==2) then
 								if (SUM(WV_cont)<0) then
 									write(*,*) "SUM(WV_cont)<0"
@@ -3137,55 +3881,50 @@ PROGRAM back_traj
 
 						end do   !nn loop
 
-						! wv_cont(x,y) is a 2d grid of E/TPW values. The grid is added to for every nn parcel back-track. E.g. in one 10min daytstep, we might release 1 parcel. This parcel will calculate the contribution from every cell in the grid. However we could release more, like 5 parcels. The contribution from the grid should be the same no matter how many parcels we release. So we take the average grid contribution per parcel released.
-						!WV_cont_day = WV_cont_day + WV_cont/npar
-						WV_cont_day = WV_cont_day + WV_cont*pw(xx,yy,mm,tt)/tpw(xx,yy,tt)*precip(xx,yy,tt)/sum(precip)
-						!WV_cont_day_apbl = WV_cont_day_apbl + WV_cont_apbl/npar
+						WV_cont_day = WV_cont_day + WV_cont/npar
+						print*,'mm,max(WV_cont_day)',mm,maxval(WV_cont_day)
 
 						if (par_lev==0) then
 							write(*,*) "par_lev==0"
 							STOP
 						end if
 
-                        !if keeping track of each parcel
-                        if (eachParcel) then
-                            !print *,"output",threadnum+10
-                            WRITE(threadnum+10) parcel_stats
-                            CLOSE(threadnum+10)
-                        end if
-
-                        !print *, 'parcel_stats(:,:10)', parcel_stats(:,:2)
 
 					end do  !mm loop
-
 				end do  !tt loop
 
-			! 	else
-			! 	print *,'No rain in the domain on this day'
 			end if
+			WV_cont_all(:,:,xx_omp+1) = WV_cont_day
+			xx_all(xx_omp+1) = xx
+			yy_all(xx_omp+1) = yy
+			pre_all(xx_omp+1) = SUM(precip(xx,yy,:))
 
 		end do   !xx_omp loop
-
-		!$ACC END PARALLEL
+		!$acc end kernels
 		!$ACC END DATA
-		!
-		!write output to netcdf file
-		!
-		status = nf90_put_var(outncid,wvcid,WV_cont_day,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
+
+
+		print*,'MAXVAL(WV_cont_all)',MAXVAL(WV_cont_all)
+		print*,'MAXVAL(pre_all)',MAXVAL(pre_all)
+
+		status = nf90_put_var(outncid,wvcid,WV_cont_all,start=(/1,1,1/),count=(/dim_j,dim_i,totpts/))
 		if(status /= nf90_NoErr) call handle_err(status)
-		!status = nf90_put_var(outncid,wvc2id,WV_cont_day_apbl,start=(/1,1,torec/),count=(/dim_j,dim_i,1/))
-		!if(status /= nf90_NoErr) call handle_err(status)
-		status = nf90_put_var(outncid,xlocid,xx,start=(/torec/))
+		status = nf90_put_var(outncid,xlocid,xx_all,start=(/1/))
 		if(status /= nf90_NoErr) call handle_err(status)
-		status = nf90_put_var(outncid,ylocid,yy,start=(/torec/))
+		status = nf90_put_var(outncid,ylocid,yy_all,start=(/1/))
 		if(status /= nf90_NoErr) call handle_err(status)
-		status = nf90_put_var(outncid,dayid,dd,start=(/torec/))
+		status = nf90_put_var(outncid,dayid,dd,start=(/1/))
 		if(status /= nf90_NoErr) call handle_err(status)
-		status = nf90_put_var(outncid,opreid,SUM(precip(xx,yy,:)),start=(/torec/))
+		status = nf90_put_var(outncid,opreid,pre_all,start=(/1/))
 		if(status /= nf90_NoErr) call handle_err(status)
 		status = nf90_close(outncid)
 		if(status /= nf90_NoErr) call handle_err(status)
+		!
+		!write output to netcdf file
+		!
+		print*,par_q,MAXVAL(WV_cont_all)
 
 	end do !! dd loop
+	
 
 END PROGRAM back_traj
